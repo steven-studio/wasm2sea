@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     gen_ir_fold_hash
+relocations:     []
+...

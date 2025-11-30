@@ -1,0 +1,189 @@
+--TEST--
+Test
+--TARGET--
+aarch64
+--ARGS--
+--debug-regset 0x3ffffffff --save --dump-live-ranges -S
+--CODE--
+{
+	uintptr_t c_1 = 0;
+	bool c_2 = 0;
+	bool c_3 = 1;
+	double c_4 = 0.5;
+	double c_5 = 0;
+	int32_t c_6 = 0;
+	int32_t c_7 = 1;
+	double c_8 = 16;
+	int32_t c_9 = 1000;
+	l_1 = START(l_35);
+	double d_2 = PARAM(l_1, "x", 0);
+	double d_3 = PARAM(l_1, "y", 1);
+	double d_5 = SUB(d_3, c_4);
+	l_10 = END(l_1);
+	l_11 = LOOP_BEGIN(l_10, l_37);
+	double d_12 = PHI(l_11, c_5, d_25);
+	double d_13 = PHI(l_11, c_5, d_23);
+	int32_t d_14 = PHI(l_11, c_6, d_15);
+	int32_t d_15 = ADD(d_14, c_7);
+	double d_17 = MUL(d_13, d_12);
+	double d_19 = MUL(d_13, d_13);
+	double d_21 = MUL(d_12, d_12);
+	double d_22 = SUB(d_19, d_21);
+	double d_23 = ADD(d_22, d_5);
+	double d_24 = ADD(d_17, d_17);
+	double d_25 = ADD(d_24, d_2);
+	double d_26 = ADD(d_21, d_19);
+	bool d_27 = GT(d_26, c_8);
+	l_28 = IF(l_11, d_27);
+	l_29 = IF_TRUE(l_28);
+	l_30 = RETURN(l_29, d_15);
+	l_31 = IF_FALSE(l_28);
+	bool d_32 = GT(d_15, c_9);
+	l_33 = IF(l_31, d_32);
+	l_34 = IF_TRUE(l_33);
+	l_35 = RETURN(l_34, c_6, l_30);
+	l_36 = IF_FALSE(l_33);
+	l_37 = LOOP_END(l_36);
+}
+--EXPECT--
+{
+	uintptr_t c_1 = 0;
+	bool c_2 = 0;
+	bool c_3 = 1;
+	double c_4 = 0.5;
+	double c_5 = 0;
+	int32_t c_6 = 0;
+	int32_t c_7 = 1;
+	double c_8 = 16;
+	int32_t c_9 = 1000;
+	l_1 = START(l_22);
+	double d_2 = PARAM(l_1, "x", 0);
+	double d_3 = PARAM(l_1, "y", 1);
+	double d_4 = SUB(d_3, c_4);
+	l_5 = END(l_1);
+	l_6 = LOOP_BEGIN(l_5, l_29);
+	double d_7 = PHI(l_6, c_5, d_28);
+	double d_8 = PHI(l_6, c_5, d_26);
+	int32_t d_9 = PHI(l_6, c_6, d_10);
+	int32_t d_10 = ADD(d_9, c_7);
+	double d_11 = MUL(d_8, d_8);
+	double d_12 = MUL(d_7, d_7);
+	double d_13 = ADD(d_12, d_11);
+	bool d_14 = GT(d_13, c_8);
+	l_15 = IF(l_6, d_14);
+	l_16 = IF_TRUE(l_15);
+	l_17 = RETURN(l_16, d_10);
+	l_18 = IF_FALSE(l_15);
+	bool d_19 = GT(d_10, c_9);
+	l_20 = IF(l_18, d_19);
+	l_21 = IF_TRUE(l_20);
+	l_22 = RETURN(l_21, c_6, l_17);
+	l_23 = IF_FALSE(l_20);
+	double d_24 = MUL(d_8, d_7);
+	double d_25 = SUB(d_11, d_12);
+	double d_26 = ADD(d_25, d_4);
+	double d_27 = ADD(d_24, d_24);
+	double d_28 = ADD(d_27, d_2);
+	l_29 = LOOP_END(l_23);
+}
+{ # LIVE-RANGES (vregs_count=12)
+TMP
+	[%d0]: [4.0-4.2)/2
+	[%d1]: [5.1-5.3)/1
+	[%w0]: [5.1-5.3)/0
+	[%d1]: [15.0-15.2)/14.2
+R1 (d_2) [SPILL=0x0]
+	[%d0]: [2.3-4.0), DEF(2.3, hint=%d0)
+	: [4.0-16.0), [18.0-21.0), [23.0-28.0)
+	[%d1]: [28.0-30.0), USE(28.1/2)!
+R2 (d_3) [%d1]: [3.3-4.1), DEF(3.3, hint=%d1), USE(4.1/1)!
+R3 (d_4) [SPILL=0x8]
+	[%d0]: [4.2-5.2), DEF(4.2)!
+	: [5.2-16.0), [18.0-21.0), [23.0-26.0)
+	[%d1]: [26.0-26.1), USE(26.1/2)!
+	: [26.1-30.0)
+R4 (d_7, d_28) [SPILL=0x10]
+	[%d0]: [6.0-12.2), DEF(7.2), USE(12.1/1)!, USE(12.1/2)!
+	: [12.2-16.0), [18.0-21.0), [23.0-24.0)
+	[%d0]: [24.0-24.1), [28.2-30.0), USE(24.1/2)!, DEF(28.2)!, PHI_USE(29.2, phi=d_7/3)
+R5 (d_8, d_26) [SPILL=0x18]
+	[%d1]: [6.0-11.2), DEF(8.2), USE(11.1/1)!, USE(11.1/2)!
+	: [11.2-16.0), [18.0-21.0), [23.0-24.0)
+	[%d1]: [24.0-24.1), [26.2-28.0), USE(24.1/1)!, DEF(26.2)!
+	: [28.0-29.1)
+	: [29.1-30.0), PHI_USE(29.2, phi=d_8/3)
+R6 (d_9, d_10) [%w0]: [6.0-10.1), [10.2-17.0), [18.0-21.0), [23.0-30.0), DEF(9.2), USE(10.1/1)!, DEF(10.2)!, USE(17.0/2, hint=%w0), USE(20.1/19.1)!, PHI_USE(29.2, phi=d_9/3)
+R7 (d_11) [SPILL=0x20]
+	[%d1]: [11.2-15.0), DEF(11.2)!, USE(13.1/2)!
+	: [15.0-16.0), [18.0-21.0), [23.0-25.0)
+	[%d0]: [25.0-25.1), USE(25.1/1)!
+R8 (d_12) [SPILL=0x28]
+	[%d0]: [12.2-13.2), DEF(12.2)!, USE(13.1/1)!
+	: [13.2-16.0), [18.0-21.0), [23.0-25.0)
+	[%d1]: [25.0-25.1), USE(25.1/2)!
+R9 (d_13) [%d0]: [13.2-15.1), DEF(13.2)!, USE(15.1/14.1)!
+R10 (d_24) [SPILL=0x30]
+	[%d0]: [24.2-25.0), DEF(24.2)!
+	: [25.0-27.0)
+	[%d0]: [27.0-27.1), USE(27.1/1)!, USE(27.1/2)!
+R11 (d_25) [%d0]: [25.2-26.1), DEF(25.2)!, USE(26.1/1)!
+R12 (d_27) [%d0]: [27.2-28.1), DEF(27.2)!, USE(28.1/1)!
+[%x0] : [17.0-17.1), [22.0-22.1)
+[%d0] : [1.0-2.3)
+[%d1] : [1.0-3.3)
+}
+test:
+	sub sp, sp, #0x40
+	str d0, [sp]
+	ldr d0, .L4
+	fsub d0, d1, d0
+	str d0, [sp, #8]
+	fmov d1, xzr
+	str d1, [sp, #0x10]
+	fmov d1, xzr
+	str d1, [sp, #0x18]
+	mov w0, wzr
+	b .L2
+	nop
+.L1:
+	ldr d1, [sp, #0x18]
+	ldr d0, [sp, #0x10]
+	fmul d0, d1, d0
+	str d0, [sp, #0x30]
+	ldr d0, [sp, #0x20]
+	ldr d1, [sp, #0x28]
+	fsub d0, d0, d1
+	ldr d1, [sp, #8]
+	fadd d1, d0, d1
+	str d1, [sp, #0x18]
+	ldr d0, [sp, #0x30]
+	fadd d0, d0, d0
+	ldr d1, [sp]
+	fadd d0, d0, d1
+	str d0, [sp, #0x10]
+.L2:
+	add w0, w0, #1
+	ldr d1, [sp, #0x18]
+	fmul d1, d1, d1
+	str d1, [sp, #0x20]
+	ldr d0, [sp, #0x10]
+	fmul d0, d0, d0
+	str d0, [sp, #0x28]
+	fadd d0, d0, d1
+	ldr d1, .L5
+	fcmp d0, d1
+	b.gt .L3
+	cmp w0, #0x3e8
+	b.le .L1
+	mov w0, wzr
+	add sp, sp, #0x40
+	ret
+.L3:
+	add sp, sp, #0x40
+	ret
+.rodata
+	.db 0x1f, 0x20, 0x03, 0xd5
+.L4:
+	.db 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xe0, 0x3f
+.L5:
+	.db 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x40
