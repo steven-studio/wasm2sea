@@ -1,35 +1,27 @@
 #pragma once
-
 #include "value_ir.hpp"
+#include <vector>
 
-// === forward declarations (避免 include 太深) ===
-struct IRContext;
-struct IRFunction;
-struct IRRegion;
-struct IRNode;
+// Forward declarations for dstogov/ir types
+typedef struct _ir_ctx ir_ctx;
+typedef int32_t ir_ref;
+
+struct IRFunction {
+    ir_ctx* ctx;
+    ir_ref entry_ref;
+};
 
 class IRBridge {
 public:
-    IRBridge(IRContext* ctx);
-
-    // 將一個 ValueIR 轉成 dstogov/ir 的 IRFunction
+    IRBridge();
+    ~IRBridge();
+    
+    // 將 ValueIR 轉成 dstogov/ir 的 IRFunction
     IRFunction* build(const ValueIR& values);
+    
+    // 印出 IR graph
+    void dump(IRFunction* fn);
 
 private:
-    IRContext* Ctx;
-
-    // 建 function 與 region
-    IRFunction* createFunctionShell();
-    IRRegion*   createRegion(IRFunction* fn);
-
-    // 第一輪建 node (不接 operands)
-    void createNodes(const ValueIR& values,
-                     IRFunction* fn,
-                     IRRegion* region,
-                     std::vector<IRNode*>& nodeMap);
-
-    // 第二輪接 operands (依 SSA 關係)
-    void connectNodes(const ValueIR& values,
-                      std::vector<IRNode*>& nodeMap);
-
+    ir_ctx* ctx_;
 };

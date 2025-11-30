@@ -1,0 +1,113 @@
+--TEST--
+FibI
+--TARGET--
+x86
+--ARGS--
+--save --dump-live-ranges -S --run
+--CODE--
+{
+	int32_t c_0 = 0;
+	int32_t c_1 = 1;
+	int32_t c_10000 = 10000;
+	uintptr_t f = func printf(uintptr_t, ...): int32_t;
+	uintptr_t format = "%d\n";
+	l_1 = START(l_6);
+	int32_t lo_1 = COPY(c_0);
+	int32_t hi_1 = COPY(c_1);
+	l_2 = END(l_1);
+	l_3 = LOOP_BEGIN(l_2, l_9);
+	int32_t lo_2 = PHI(l_3, lo_1, lo_3);
+	int32_t hi_2 = PHI(l_3, hi_1, hi_3);
+	bool b = LT(hi_2, c_10000);
+	l_4 = IF(l_3, b);
+	l_7 = IF_TRUE(l_4);
+	int32_t hi_3 = ADD(hi_2, lo_2);
+	int32_t lo_3 = SUB(hi_3, lo_2);
+	l_8 = CALL/2(l_7, f, format, lo_3);
+	l_9 = LOOP_END(l_8);
+	l_5 = IF_FALSE(l_4);
+	l_6 = RETURN(l_5, c_0);
+}
+--EXPECT--
+{
+	uintptr_t c_1 = 0;
+	bool c_2 = 0;
+	bool c_3 = 1;
+	int32_t c_4 = 0;
+	int32_t c_5 = 1;
+	int32_t c_6 = 10000;
+	uintptr_t c_7 = func printf(uintptr_t, ...): int32_t;
+	uintptr_t c_8 = "%d\n";
+	l_1 = START(l_14);
+	l_2 = END(l_1);
+	l_3 = LOOP_BEGIN(l_2, l_12);
+	int32_t d_4 = PHI(l_3, c_4, d_5);
+	int32_t d_5 = PHI(l_3, c_5, d_9);
+	bool d_6 = LT(d_5, c_6);
+	l_7 = IF(l_3, d_6);
+	l_8 = IF_TRUE(l_7);
+	int32_t d_9 = ADD(d_5, d_4);
+	l_10 = CALL/2(l_8, c_7, c_8, d_5);
+	l_12 = LOOP_END(l_10);
+	l_13 = IF_FALSE(l_7);
+	l_14 = RETURN(l_13, c_4);
+}
+{ # LIVE-RANGES (vregs_count=3)
+TMP
+	[%eax]: [2.1-2.3)/0
+	[%eax]: [12.1-12.3)/0
+R1 (d_4) [%eax]: [3.0-9.1), DEF(4.2), USE(9.1/2)!
+R2 (d_5) [%ebx]: [3.0-13.0), DEF(5.2), USE(7.1/6.1), USE(9.1/1)!, USE(10.1/4), PHI_USE(12.2, phi=d_4/3)
+R3 (d_9) [%ebp]: [9.2-13.0), DEF(9.2)!, PHI_USE(12.2, phi=d_5/3)
+[%eax] : [14.0-14.1)
+[%SCRATCH] : [10.1-10.2)
+}
+main:
+	pushl %ebx
+	pushl %ebp
+	subl $0x14, %esp
+	movl $1, %ebx
+	xorl %eax, %eax
+	jmp .L2
+	nop
+	nop
+.L1:
+	leal (%ebx, %eax), %ebp
+	movl %ebx, 4(%esp)
+	movl $.L3, (%esp)
+	calll printf
+	movl %ebx, %eax
+	movl %ebp, %ebx
+.L2:
+	cmpl $0x2710, %ebx
+	jl .L1
+	xorl %eax, %eax
+	addl $0x14, %esp
+	popl %ebp
+	popl %ebx
+	retl
+.rodata
+	.db 0x90
+.L3:
+	.db 0x25, 0x64, 0x0a, 0x00
+
+1
+1
+2
+3
+5
+8
+13
+21
+34
+55
+89
+144
+233
+377
+610
+987
+1597
+2584
+4181
+6765

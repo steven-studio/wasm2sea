@@ -17,13 +17,13 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
         switch (ins.op) {
         case WasmOp::LocalGet: {
             int id = newValue(Op::Param);
-            values[id].paramIndex = ins.arg;
+            values[id].paramIndex = ins.operand;
             stack.push_back(id);
             break;
         }
         case WasmOp::I32Const: {
             int id = newValue(Op::Const);
-            values[id].constValue = ins.arg;
+            values[id].constValue = ins.operand;
             stack.push_back(id);
             break;
         }

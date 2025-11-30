@@ -1,143 +1,117 @@
 #include "ir_bridge.hpp"
-#include <cassert>
-#include <iostream>
+#include "value_ir.hpp"
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
-// ==========================================================
-//  假的 dstogov/ir 型別與函式實作 (stub)
-//  目的是先讓專案可以編譯 & 執行，之後再換成真正的 API。
-// ==========================================================
-
-struct IRContext {};
-struct IRFunction {};
-struct IRRegion {};
-struct IRNode {};
-
-// 先做一堆空的 stub，之後會用真正的 dstogov/ir 取代
-IRContext* irCreateContext() {
-    return new IRContext();
+// 引入 dstogov/ir 的 C API
+extern "C" {
+#include "ir.h"
+#include "ir_builder.h"
 }
 
-IRFunction* irCreateFunction(IRContext*) {
-    return new IRFunction();
-}
-
-IRRegion* irCreateRegion(IRFunction*) {
-    return new IRRegion();
-}
-
-IRNode* irCreateParamNode(IRFunction*, int) {
-    return new IRNode();
-}
-
-IRNode* irCreateIntConstNode(IRFunction*, int) {
-    return new IRNode();
-}
-
-IRNode* irCreateAddNode(IRFunction*) {
-    return new IRNode();
-}
-
-IRNode* irCreateReturnNode(IRFunction*) {
-    return new IRNode();
-}
-
-void irNodeSetOperand(IRNode*, int, IRNode*) {
-    // stub: do nothing
-}
-
-// ==========================================================
-//                     IRBridge 實作
-// ==========================================================
-
-IRBridge::IRBridge(IRContext* ctx)
-    : Ctx(ctx)
-{}
-
-// ---- 建立 function shell ----
-IRFunction* IRBridge::createFunctionShell() {
-    return irCreateFunction(Ctx);
-}
-
-// ---- 建立 region ----
-IRRegion* IRBridge::createRegion(IRFunction* fn) {
-    return irCreateRegion(fn);
-}
-
-// ---- Phase 1：建立所有 Node（不接邊） ----
-void IRBridge::createNodes(const ValueIR& values,
-                           IRFunction* fn,
-                           IRRegion* region,
-                           std::vector<IRNode*>& nodeMap)
-{
-    (void)region; // 目前 region 沒用到，先避免 warning
-
-    for (auto& v : values) {
-        IRNode* n = nullptr;
-
-        switch (v.op) {
-        case Op::Param:
-            n = irCreateParamNode(fn, v.paramIndex);
-            break;
-
-        case Op::Const:
-            n = irCreateIntConstNode(fn, v.constValue);
-            break;
-
-        case Op::Add:
-            n = irCreateAddNode(fn);
-            break;
-
-        case Op::Return:
-            n = irCreateReturnNode(fn);
-            break;
-
-        default:
-            std::cerr << "Unsupported opcode in IRBridge\n";
-            assert(false);
-        }
-
-        nodeMap[v.id] = n;
+IRBridge::IRBridge() {
+    // 分配 ir_ctx 結構
+    ctx_ = (ir_ctx*)malloc(sizeof(ir_ctx));
+    if (!ctx_) {
+        fprintf(stderr, "Failed to allocate ir_ctx\n");
+        exit(1);
     }
 }
 
-// ---- Phase 2：依 SSA 依賴接回 Node operand ----
-void IRBridge::connectNodes(const ValueIR& values,
-                            std::vector<IRNode*>& nodeMap)
-{
-    for (auto& v : values) {
-        IRNode* n = nodeMap[v.id];
-
-        switch (v.op) {
-        case Op::Add:
-            irNodeSetOperand(n, 0, nodeMap[v.lhs]);
-            irNodeSetOperand(n, 1, nodeMap[v.rhs]);
-            break;
-
-        case Op::Return:
-            irNodeSetOperand(n, 0, nodeMap[v.lhs]);
-            break;
-
-        default:
-            // Param / Const 沒有 operand
-            break;
-        }
+IRBridge::~IRBridge() {
+    if (ctx_) {
+        ir_free(ctx_);
+        free(ctx_);
     }
 }
 
-// ---- 對外主入口 ----
 IRFunction* IRBridge::build(const ValueIR& values) {
-    // 建 function + region
-    IRFunction* fn = createFunctionShell();
-    IRRegion* region = createRegion(fn);
+    // 重要：dstogov/ir 的巨集需要變數名為 'ctx'
+    ir_ctx* ctx = ctx_;
 
-    // 為每個 Value 分配一格 nodeMap
-    std::vector<IRNode*> nodeMap(values.size(), nullptr);
+    ir_init(ctx_, IR_FUNCTION | IR_OPT_FOLDING, 128, 128);
+    
+    // 開始建構 IR
+    ir_START();
+    ir_ref start = ctx_->ir_base[1].op2;  // START node reference
+    
+    // 映射 ValueID → ir_ref
+    std::vector<ir_ref> value_map(values.size(), IR_UNUSED);
+    uint32_t param_idx = 0;
+    
+    // 遍歷所有 ValueIR 指令
+    for (size_t i = 0; i < values.size(); i++) {
+        const Value& val = values[i];
+                
+        switch (val.op) {
+        case Op::Param: {
+            char name[32];
+            snprintf(name, sizeof(name), "p%u", param_idx);
+            ir_ref param = ir_PARAM(IR_I32, name, param_idx + 1);
+            value_map[i] = param;
+            param_idx++;
+            break;
+        }
+        
+        case Op::Add: {
+            // 檢查 lhs 和 rhs 是否有效
+            if (val.lhs < 0 || val.lhs >= (int)i) {
+                fprintf(stderr, "ERROR: Invalid lhs=%d for value %zu\n", val.lhs, i);
+                break;
+            }
+            if (val.rhs < 0 || val.rhs >= (int)i) {
+                fprintf(stderr, "ERROR: Invalid rhs=%d for value %zu\n", val.rhs, i);
+                break;
+            }
 
-    // 第一輪先建 node，不接 operand
-    createNodes(values, fn, region, nodeMap);
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_ADD_I32(lhs_ref, rhs_ref);
+            break;
+        }
+        
+        case Op::Return: {            
+            if (val.lhs < 0 || val.lhs >= (int)i) {
+                fprintf(stderr, "ERROR: Invalid return lhs=%d\n", val.lhs);
+                break;
+            }
+            
+            ir_ref ret_val = value_map[val.lhs];
+            ir_RETURN(ret_val);
+            break;
+        }
+        
+        case Op::Const: {
+            value_map[i] = ir_CONST_I32(val.constValue);
+            break;
+        }
+        
+        default:
+            fprintf(stderr, "Unsupported Op: %d\n", (int)val.op);
+            break;
+        }
+    }
+    
+    // 包裝成 IRFunction
+    auto* fn = new IRFunction();
+    fn->ctx = ctx_;
+    fn->entry_ref = start;
+    
+    return fn;
+}
 
-    // 第二輪依照 SSA 依賴接邊
-    connectNodes(values, nodeMap);
-
-    return fn; // 回傳「假的」function 物件（目前只是佔位）
+void IRBridge::dump(IRFunction* fn) {
+    if (!fn || !fn->ctx) {
+        fprintf(stderr, "Invalid IRFunction\n");
+        return;
+    }
+    
+    // 文字格式
+    printf("\nIR Dump:\n");
+    ir_dump(fn->ctx, stdout);
+    
+    // DOT 格式（可用 Graphviz 畫圖）
+    printf("\n\nDOT Format (copy to file.dot and run: dot -Tpng file.dot -o graph.png):\n");
+    ir_dump_dot(fn->ctx, "wasm_function", stdout);
 }

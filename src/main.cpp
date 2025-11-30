@@ -1,47 +1,56 @@
 #include "wasm_instr.hpp"
 #include "wasm_lower.hpp"
 #include "value_ir_dump.hpp"
-#include "ir_bridge.hpp"   // 新增這行
+#include "ir_bridge.hpp"
+#include "wasm_reader.hpp"
+#include <iostream>
 
-// 如果 IRContext / irCreateContext 沒有在 ir_bridge.hpp 裡 include 進來
-// 你之後要用 dstogov/ir 真正的 header 取代這些 forward 宣告。
-// 這裡只是避免編譯錯誤的暫時作法。
-struct IRContext;
-IRContext* irCreateContext();
+int main(int argc, char* argv[]) {
+    std::cout << "=== Wasm2Sea Compiler Pipeline ===\n\n";
+    
+    InstrSeq code;
 
-int main() {
-    // ====== Step 0: 準備「假裝」的 Wasm 指令序列 ======
+    // Step 0: 準備 Wasm 指令序列
     // (func (param $x i32) (param $y i32) (result i32)
     //   local.get 0
     //   local.get 1
     //   i32.add
+    //   return
     // )
-    // 我們自己加上一個 Return pseudo-op
-    InstrSeq code = {
-        {WasmOp::LocalGet, 0},
-        {WasmOp::LocalGet, 1},
-        {WasmOp::I32Add,   0},
-        {WasmOp::Return,   0}
-    };
+    if (argc > 1) {
+        code = readWasmFile(argv[1]);
+        if (code.empty()) {
+            std::cerr << "Failed to read WASM file\n";
+            return 1;
+        }
+    } else {
+        // 預設範例
+        InstrSeq code = {
+            {WasmOp::LocalGet, 0},
+            {WasmOp::LocalGet, 1},
+            {WasmOp::I32Add, 0},
+            {WasmOp::Return, 0}
+        };
+    }
 
-    // ====== Step 1: WASM stack → 你的 SSA IR (ValueIR) ======
+    // Step 1: Wasm → ValueIR (你的 SSA IR)
+    std::cout << "Step 1: Lowering Wasm to ValueIR\n";
+    std::cout << "================================\n";
     ValueIR values = lowerWasmToSsa(code);
-
-    // 先印出來確認 lowering 是對的
     dumpValueIR(values);
 
-    // ====== Step 2: ValueIR → dstogov/ir Node Graph ======
-    IRContext* ctx = irCreateContext();   // 之後要改成實際 API
+    // Step 2: ValueIR → dstogov/ir
+    std::cout << "\nStep 2: Building dstogov/ir Graph\n";
+    std::cout << "==================================\n";
+    IRBridge bridge;
+    IRFunction* fn = bridge.build(values);
+    
+    // 印出 dstogov/ir 的 IR graph
+    bridge.dump(fn);
 
-    IRBridge bridge(ctx);
-    IRFunction* fn = bridge.build(values);  // 建出對應的 IRFunction
-
-    // 這裡之後可以接：
-    // - dstogov/ir 自己的 IR dump
-    // - JIT / codegen
-    // 現在先不做，專注在前端
-
-    (void)fn; // 暫時避免 unused variable 警告
-
+    // 清理
+    delete fn;
+    
+    std::cout << "\n=== Compilation Complete ===\n";
     return 0;
 }
