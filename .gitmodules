@@ -4,3 +4,6 @@
 [submodule "ir"]
 	path = ir
 	url = https://github.com/dstogov/ir.git
+[submodule "third_party/binaryen"]
+	path = third_party/binaryen
+	url = https://github.com/WebAssembly/binaryen.git
