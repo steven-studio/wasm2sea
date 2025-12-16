@@ -22,6 +22,9 @@ public:
     // 印出 IR graph
     void dump(IRFunction* fn);
 
+    // 回傳 true 表示成功
+    bool save(const char* path);
+
 private:
     ir_ctx* ctx_;
 };

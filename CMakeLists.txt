@@ -5,23 +5,21 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+add_subdirectory(third_party/binaryen EXCLUDE_FROM_ALL)
+
 # ===== dstogov/ir 路徑 =====
-set(IR_DIR ${CMAKE_SOURCE_DIR}/dstogov/ir)
+set(IR_DIR ${CMAKE_SOURCE_DIR}/third_party/dstogov-ir)
+set(IR_LIB ${IR_DIR}/libir.a)  # 若實際產出路徑不同，再改這一行即可
 
 # ===== Binaryen 路徑 =====
 set(BINARYEN_DIR ${CMAKE_SOURCE_DIR}/third_party/binaryen)
-
-# 確保 ir 已編譯
-if(NOT EXISTS ${IR_DIR}/libir.a)
-    message(FATAL_ERROR 
-        "libir.a not found! Please run 'make' in ${IR_DIR} first")
-endif()
 
 # ===== 專案原始碼 =====
 set(SOURCES
     src/main.cpp
     src/wasm_lower.cpp
     src/value_ir_dump.cpp
+    src/value_ir_eval.cpp
     src/ir_bridge.cpp
     src/wasm_reader.cpp
 )
@@ -38,7 +36,7 @@ target_include_directories(wasm2sea PRIVATE
 # ===== 連結 libir.a =====
 target_link_libraries(wasm2sea PRIVATE 
     ${IR_DIR}/libir.a
-    ${BINARYEN_DIR}/lib/libbinaryen.so
+    binaryen
     pthread
     m                        # 數學函式庫
     dl                       # 動態連結函式庫

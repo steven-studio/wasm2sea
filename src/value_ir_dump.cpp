@@ -15,6 +15,12 @@ void dumpValueIR(const ValueIR& values) {
         case Op::Add:
             std::cout << "(v" << v.lhs << ", v" << v.rhs << ")";
             break;
+        case Op::Sub:
+            std::cout << "(v" << v.lhs << ", v" << v.rhs << ")";
+            break;
+        case Op::Mul:
+            std::cout << "(v" << v.lhs << ", v" << v.rhs << ")";
+            break;
         case Op::Return:
             std::cout << "(v" << v.lhs << ")";
             break;
