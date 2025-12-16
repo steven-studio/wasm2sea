@@ -7,6 +7,8 @@ enum class Op {
     Param,     // 對應 local.get
     Const,     // 對應 i32.const
     Add,       // 對應 i32.add
+    Sub,       // 對應 i32.sub
+    Mul,       // 對應 i32.mul
     Return
 };
 
@@ -33,6 +35,8 @@ inline std::string opToString(Op op) {  // 改：Op → ValueOp
     case Op::Param:  return "Param";    // 改：Op:: → ValueOp::
     case Op::Const:  return "Const";    // 改：Op:: → ValueOp::
     case Op::Add:    return "Add";      // 改：Op:: → ValueOp::
+    case Op::Sub:    return "Sub";      // 改：Op:: → ValueOp::
+    case Op::Mul:    return "Mul";      // 改：Op:: → ValueOp::
     case Op::Return: return "Return";   // 改：Op:: → ValueOp::
     }
     return "?";

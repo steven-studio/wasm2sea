@@ -4,10 +4,43 @@
 #include "ir_bridge.hpp"
 #include "wasm_reader.hpp"
 #include <iostream>
+#include <string>
+
+static void usage(const char* prog) {
+    std::cerr
+        << "Usage:\n"
+        << "  " << prog << " <input.wasm> [--save-ir <out.ir>]\n"
+        << "  " << prog << " (no args: uses built-in example)\n";
+}
 
 int main(int argc, char* argv[]) {
     std::cout << "=== Wasm2Sea Compiler Pipeline ===\n\n";
     
+    std::string wasmPath;
+    std::string saveIrPath;
+
+    // ---- argv parsing (minimal) ----
+    // First non-flag arg is input.wasm
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a == "--help" || a == "-h") {
+            usage(argv[0]);
+            return 0;
+        } else if (a == "--save-ir") {
+            if (i + 1 >= argc) {
+                std::cerr << "Error: --save-ir requires a path\n";
+                return 2;
+            }
+            saveIrPath = argv[++i];
+        } else if (!a.empty() && a[0] == '-') {
+            std::cerr << "Unknown option: " << a << "\n";
+            usage(argv[0]);
+            return 2;
+        } else {
+            wasmPath = a;
+        }
+    }
+
     InstrSeq code;
 
     // Step 0: 準備 Wasm 指令序列
@@ -47,6 +80,9 @@ int main(int argc, char* argv[]) {
     
     // 印出 dstogov/ir 的 IR graph
     bridge.dump(fn);
+
+    // ★ 核心驗證輸出
+    bridge.save("out.ir");
 
     // 清理
     delete fn;

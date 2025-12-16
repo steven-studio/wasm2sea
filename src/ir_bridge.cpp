@@ -70,6 +70,40 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             value_map[i] = ir_ADD_I32(lhs_ref, rhs_ref);
             break;
         }
+
+        case Op::Sub: {
+            // 檢查 lhs 和 rhs 是否有效
+            if (val.lhs < 0 || val.lhs >= (int)i) {
+                fprintf(stderr, "ERROR: Invalid lhs=%d for value %zu\n", val.lhs, i);
+                break;
+            }
+            if (val.rhs < 0 || val.rhs >= (int)i) {
+                fprintf(stderr, "ERROR: Invalid rhs=%d for value %zu\n", val.rhs, i);
+                break;
+            }
+
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_SUB_I32(lhs_ref, rhs_ref);
+            break;
+        }
+
+        case Op::Mul: {
+            // 檢查 lhs 和 rhs 是否有效
+            if (val.lhs < 0 || val.lhs >= (int)i) {
+                fprintf(stderr, "ERROR: Invalid lhs=%d for value %zu\n", val.lhs, i);
+                break;
+            }
+            if (val.rhs < 0 || val.rhs >= (int)i) {
+                fprintf(stderr, "ERROR: Invalid rhs=%d for value %zu\n", val.rhs, i);
+                break;
+            }
+
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_MUL_I32(lhs_ref, rhs_ref);
+            break;
+        }
         
         case Op::Return: {            
             if (val.lhs < 0 || val.lhs >= (int)i) {
@@ -114,4 +148,16 @@ void IRBridge::dump(IRFunction* fn) {
     // DOT 格式（可用 Graphviz 畫圖）
     printf("\n\nDOT Format (copy to file.dot and run: dot -Tpng file.dot -o graph.png):\n");
     ir_dump_dot(fn->ctx, "wasm_function", stdout);
+}
+
+bool IRBridge::save(const char* path) {
+    if (!path) return false;
+
+    FILE* f = fopen(path, "w");
+    if (!f) return false;
+
+    ir_save(ctx_, 0, f);
+
+    fclose(f);
+    return true;
 }
