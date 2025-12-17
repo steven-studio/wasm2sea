@@ -45,6 +45,20 @@ void dumpValueIR(const ValueIR& values) {
         case Op::Popcnt:  // 新增
             std::cout << "(v" << v.lhs << ")";
             break;
+        case Op::Phi:
+            std::cout << "Phi(";
+            if (!v.operands.empty()) {
+                for (size_t i = 0; i < v.operands.size(); i++) {
+                    if (i > 0) std::cout << ", ";
+                    std::cout << "v" << v.operands[i];
+                }
+            }
+            std::cout << ")";
+            break;
+        case Op::Br_if:
+            std::cout << "Br_if(cond: v" << v.lhs 
+                    << ", target: v" << v.rhs << ")";
+            break;
         case Op::Return:
             std::cout << "(v" << v.lhs << ")";
             break;

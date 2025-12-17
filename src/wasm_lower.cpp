@@ -26,11 +26,16 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
 
     // 控制流栈：记录 if/else 的信息
     struct ControlFrame {
+        enum Type { If, Loop, Block } type;
         int if_id;           // if 指令的 value id
         int cond_id;         // 条件的 value id
         std::vector<int> then_values;  // then 分支产生的值
         std::vector<int> else_values;  // else 分支产生的值
         size_t stack_size;   // if 之前的栈大小
+
+        // Loop 专用
+        int loop_start_id;                        // 循环开始的 value id
+        std::unordered_map<int, int> loop_phis;   // local_index -> phi_value_id
     };
     std::vector<ControlFrame> control_stack;
 
@@ -79,35 +84,55 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             ControlFrame frame = control_stack.back();
             control_stack.pop_back();
             
-            // 记录 else 分支的结果（如果有）
-            if (stack.size() > frame.stack_size) {
-                int else_val = stack.back();
-                stack.pop_back();
-                frame.else_values.push_back(else_val);
-            }
-            
-            // 创建 End 节点并生成 Select/Phi
-            int end_id = newValue(Op::End);
-            
-            // 如果 then 和 else 都有返回值，创建一个选择
-            if (!frame.then_values.empty() && !frame.else_values.empty()) {
-                int select_id = newValue(Op::Select);
-                values[select_id].operands = {
-                    frame.cond_id,
-                    frame.else_values[0],   // ← 交换：else 在前
-                    frame.then_values[0]    // ← 交换：then 在后
-                };
-                stack.push_back(select_id);
-            } else if (!frame.then_values.empty()) {
-                // 只有 then 分支有值
-                stack.push_back(frame.then_values[0]);
-            } else if (!frame.else_values.empty()) {
-                // 只有 else 分支有值
-                stack.push_back(frame.else_values[0]);
+            if (frame.type == ControlFrame::Loop) {
+                // 循环结束 - 恢复 localVars
+                for (auto& [idx, val_id] : frame.loop_phis) {
+                    // 检查是否是 Phi 节点
+                    if (val_id < (int)values.size() && values[val_id].op == Op::Phi) {
+                        // 如果 phi 只有一个输入，退化为单值
+                        if (values[val_id].operands.size() == 1) {
+                            localVars[idx] = values[val_id].operands[0];
+                        } else {
+                            localVars[idx] = val_id;
+                        }
+                    } else {
+                        // 不是 Phi，直接使用
+                        localVars[idx] = val_id;
+                    }
+                }
+                
+                int end_id = newValue(Op::End);
+            } else {
+
+                // 记录 else 分支的结果（如果有）
+                if (stack.size() > frame.stack_size) {
+                    int else_val = stack.back();
+                    stack.pop_back();
+                    frame.else_values.push_back(else_val);
+                }
+                
+                // 创建 End 节点并生成 Select/Phi
+                int end_id = newValue(Op::End);
+                
+                // 如果 then 和 else 都有返回值，创建一个选择
+                if (!frame.then_values.empty() && !frame.else_values.empty()) {
+                    int select_id = newValue(Op::Select);
+                    values[select_id].operands = {
+                        frame.cond_id,
+                        frame.else_values[0],   // ← 交换：else 在前
+                        frame.then_values[0]    // ← 交换：then 在后
+                    };
+                    stack.push_back(select_id);
+                } else if (!frame.then_values.empty()) {
+                    // 只有 then 分支有值
+                    stack.push_back(frame.then_values[0]);
+                } else if (!frame.else_values.empty()) {
+                    // 只有 else 分支有值
+                    stack.push_back(frame.else_values[0]);
+                }
             }
             break;
         }
-
 
         case WasmOp::LocalGet: {
             // 查找局部变量当前值
@@ -348,6 +373,60 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             // 还需要第三个值，可能需要扩展 Value 结构
             
             stack.push_back(id);
+            break;
+        }
+
+        case WasmOp::Loop: {
+            // 创建 Loop 节点
+            int loop_id = newValue(Op::Loop);
+            
+            ControlFrame frame;
+            frame.type = ControlFrame::Loop;
+            frame.loop_start_id = loop_id;
+            frame.stack_size = stack.size();
+            
+            // 暂时不创建 Phi，等到循环结束时再根据实际情况创建
+            // 只记录循环开始时的局部变量值
+            for (auto& [idx, val] : localVars) {
+                int phi_id = newValue(Op::Phi);
+                values[phi_id].operands.push_back(val);
+                values[phi_id].local_index = idx;  // ← 记录局部变量索引
+                
+                frame.loop_phis[idx] = phi_id;
+                localVars[idx] = phi_id;
+            }
+            
+            control_stack.push_back(frame);
+            break;
+        }
+
+        case WasmOp::Br_if: {
+            if (stack.empty()) break;
+            int cond = stack.back();
+            stack.pop_back();
+            
+            int depth = ins.operand;
+            if (depth >= (int)control_stack.size()) break;
+            
+            ControlFrame& target = control_stack[control_stack.size() - 1 - depth];
+            
+            if (target.type == ControlFrame::Loop) {
+                // 更新 Phi 的回边
+                for (auto& [idx, phi_id] : target.loop_phis) {
+                    if (localVars.count(idx)) {
+                        int current_val = localVars[idx];
+                        // 只有当前值不是 Phi 自己时才添加回边
+                        if (current_val != phi_id) {  // ← 关键检查
+                            values[phi_id].operands.push_back(current_val);
+                        }
+                        // 如果相等，说明这个变量没有被修改，Phi 退化为单值
+                    }
+                }
+                
+                int br_if_id = newValue(Op::Br_if);
+                values[br_if_id].lhs = cond;
+                values[br_if_id].rhs = target.loop_start_id;
+            }
             break;
         }
 
