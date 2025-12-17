@@ -51,6 +51,7 @@ enum class Op {
     Loop,      // 循环开始
     Br,        // 无条件跳转
     Br_if,     // 条件跳转
+    Phi,      // 新增：Phi 节点，用于合并循环变量
 
     Return
 };
@@ -67,6 +68,8 @@ struct Value {
     // 為了向後兼容，可以加 operands 陣列
     std::vector<int> operands;
     
+    int local_index;  // ← 新增：对于 Phi，记录对应的局部变量索引
+
     // 建構函式（可選）
     Value() = default;
 };
@@ -113,6 +116,10 @@ inline std::string opToString(Op op) {  // 改：Op → ValueOp
     case Op::If:   return "If";
     case Op::Else: return "Else";
     case Op::End:  return "End";
+    case Op::Loop: return "Loop";
+    case Op::Br: return "Br";
+    case Op::Br_if: return "Br_if";
+    case Op::Phi: return "Phi";      // 新增
     case Op::Return: return "Return";
     default:         return "Unknown";
     }
