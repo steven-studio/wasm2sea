@@ -66,6 +66,42 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             stack.push_back(id);
             break;
         }
+        case WasmOp::I32DivS: {
+            int rhs = stack.back(); stack.pop_back();
+            int lhs = stack.back(); stack.pop_back();
+            int id = newValue(Op::Div_S);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I32DivU: {
+            int rhs = stack.back(); stack.pop_back();
+            int lhs = stack.back(); stack.pop_back();
+            int id = newValue(Op::Div_U);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I32RemS: {
+            int rhs = stack.back(); stack.pop_back();
+            int lhs = stack.back(); stack.pop_back();
+            int id = newValue(Op::Rem_S);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I32RemU: {
+            int rhs = stack.back(); stack.pop_back();
+            int lhs = stack.back(); stack.pop_back();
+            int id = newValue(Op::Rem_U);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
         case WasmOp::Return: {
             int v = stack.back(); stack.pop_back();
             int id = newValue(Op::Return);

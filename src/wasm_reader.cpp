@@ -43,7 +43,18 @@ public:
         case MulInt32:
             instructions.push_back({WasmOp::I32Mul, 0});
             break;
-        // 可以加更多運算
+        case DivSInt32:  // ← 新增：有號除法
+            instructions.push_back({WasmOp::I32DivS, 0});
+            break;
+        case DivUInt32:  // ← 新增：無號除法
+            instructions.push_back({WasmOp::I32DivU, 0});
+            break;
+        case RemSInt32:  // ← 新增：有號取餘
+            instructions.push_back({WasmOp::I32RemS, 0});
+            break;
+        case RemUInt32:  // ← 新增：無號取餘
+            instructions.push_back({WasmOp::I32RemU, 0});
+            break;
         default:
             fprintf(stderr, "Warning: Unsupported binary op: %d\n", curr->op);
             break;
