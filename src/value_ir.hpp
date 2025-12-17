@@ -9,6 +9,10 @@ enum class Op {
     Add,       // 對應 i32.add
     Sub,       // 對應 i32.sub
     Mul,       // 對應 i32.mul
+    Div_S,     // 新增：有號除法
+    Div_U,     // 新增：無號除法
+    Rem_S,     // 新增：有號取餘
+    Rem_U,     // 新增：無號取餘
     Return
 };
 
@@ -38,6 +42,11 @@ inline std::string opToString(Op op) {  // 改：Op → ValueOp
     case Op::Sub:    return "Sub";      // 改：Op:: → ValueOp::
     case Op::Mul:    return "Mul";      // 改：Op:: → ValueOp::
     case Op::Return: return "Return";   // 改：Op:: → ValueOp::
+    case Op::Div_S:  return "Div_S";    // 新增：有號除法
+    case Op::Div_U:  return "Div_U";    // 新增：無號除法
+    case Op::Rem_S:  return "Rem_S";    // 新增：有號取餘
+    case Op::Rem_U:  return "Rem_U";    // 新增：無號取餘
+    default:         return "Unknown";
     }
     return "?";
 }

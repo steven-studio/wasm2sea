@@ -9,7 +9,11 @@ enum class WasmOp {
     I32Add,
     I32Sub,
     I32Mul,
-    Return
+    Return,
+    I32DivS,
+    I32DivU,
+    I32RemS,
+    I32RemU
 };
 
 struct WasmInstr {

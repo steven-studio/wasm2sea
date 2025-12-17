@@ -104,6 +104,67 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             value_map[i] = ir_MUL_I32(lhs_ref, rhs_ref);
             break;
         }
+
+        case Op::Div_S: {
+            if (val.lhs < 0 || val.lhs >= (int)i) {
+                fprintf(stderr, "ERROR: Invalid lhs=%d for value %zu\n", val.lhs, i);
+                break;
+            }
+            if (val.rhs < 0 || val.rhs >= (int)i) {
+                fprintf(stderr, "ERROR: Invalid rhs=%d for value %zu\n", val.rhs, i);
+                break;
+            }
+            
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_DIV_I32(lhs_ref, rhs_ref);  // ✅ 正確
+            break;
+        }
+        case Op::Div_U: {
+            if (val.lhs < 0 || val.lhs >= (int)i) {
+                fprintf(stderr, "ERROR: Invalid lhs=%d for value %zu\n", val.lhs, i);
+                break;
+            }
+            if (val.rhs < 0 || val.rhs >= (int)i) {
+                fprintf(stderr, "ERROR: Invalid rhs=%d for value %zu\n", val.rhs, i);
+                break;
+            }
+            
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_DIV_U32(lhs_ref, rhs_ref);  // ✅ 改成 U32
+            break;
+        }
+        case Op::Rem_S: {
+            if (val.lhs < 0 || val.lhs >= (int)i) {
+                fprintf(stderr, "ERROR: Invalid lhs=%d for value %zu\n", val.lhs, i);
+                break;
+            }
+            if (val.rhs < 0 || val.rhs >= (int)i) {
+                fprintf(stderr, "ERROR: Invalid rhs=%d for value %zu\n", val.rhs, i);
+                break;
+            }
+            
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_MOD_I32(lhs_ref, rhs_ref);  // ✅ 正確
+            break;
+        }
+        case Op::Rem_U: {
+            if (val.lhs < 0 || val.lhs >= (int)i) {
+                fprintf(stderr, "ERROR: Invalid lhs=%d for value %zu\n", val.lhs, i);
+                break;
+            }
+            if (val.rhs < 0 || val.rhs >= (int)i) {
+                fprintf(stderr, "ERROR: Invalid rhs=%d for value %zu\n", val.rhs, i);
+                break;
+            }
+            
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_MOD_U32(lhs_ref, rhs_ref);  // ✅ 改成 U32
+            break;
+        }
         
         case Op::Return: {            
             if (val.lhs < 0 || val.lhs >= (int)i) {
