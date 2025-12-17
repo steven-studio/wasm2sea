@@ -11,7 +11,6 @@ enum class WasmOp {
     I32Add,
     I32Sub,
     I32Mul,
-    Return,
     I32DivS,
     I32DivU,
     I32RemS,
@@ -33,7 +32,11 @@ enum class WasmOp {
     I32And, I32Or, I32Xor,
     I32Shl, I32ShrS, I32ShrU,
     I32Rotl, I32Rotr,
-    I32Clz, I32Ctz, I32Popcnt
+    I32Clz, I32Ctz, I32Popcnt,
+
+    Select,   // 新增
+
+    Return
 };
 
 struct Instr {

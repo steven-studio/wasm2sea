@@ -241,6 +241,25 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             break;
         }
 
+        case WasmOp::Select: {
+            if (stack.size() < 3) break;
+            
+            // 弹出的顺序和压入相反
+            int cond = stack.back(); stack.pop_back();   // condition
+            int true_val = stack.back(); stack.pop_back();  // true value
+            int false_val = stack.back(); stack.pop_back(); // false value
+            
+            int id = newValue(Op::Select);
+            values[id].operands = {cond, true_val, false_val};
+            // 或者用现有的字段：
+            // values[id].lhs = cond;
+            // values[id].rhs = true_val;
+            // 还需要第三个值，可能需要扩展 Value 结构
+            
+            stack.push_back(id);
+            break;
+        }
+
         case WasmOp::Return: {
             int v = stack.back(); stack.pop_back();
             int id = newValue(Op::Return);

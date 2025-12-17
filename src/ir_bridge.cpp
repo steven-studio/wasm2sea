@@ -3,6 +3,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <unordered_map>
+#include <map>
+#include <set>
 
 // 引入 dstogov/ir 的 C API
 extern "C" {
@@ -38,21 +41,58 @@ IRFunction* IRBridge::build(const ValueIR& values) {
     
     // 映射 ValueID → ir_ref
     std::vector<ir_ref> value_map(values.size(), IR_UNUSED);
-    uint32_t param_idx = 0;
+    // 预先创建所有参数（按照 paramIndex 排序）
+    std::map<int, int> param_index_to_value_id;  // paramIndex -> value id
     
+    // 第一遍：找出所有参数及其 paramIndex
+    for (size_t i = 0; i < values.size(); i++) {
+        if (values[i].op == Op::Param) {
+            param_index_to_value_id[values[i].paramIndex] = i;
+        }
+    }
+    
+    // 第二遍：按照 paramIndex 顺序创建 IR 参数
+    for (auto& [param_idx, value_id] : param_index_to_value_id) {
+        char name[32];
+        snprintf(name, sizeof(name), "p%d", param_idx);
+        ir_ref param_ref = ir_PARAM(IR_I32, name, param_idx + 1);
+        value_map[value_id] = param_ref;
+    }
+    
+    // 为每个可能的局部变量创建 VAR
+    std::set<int> local_indices;
+    for (const auto& v : values) {
+        if (v.op == Op::Param || v.op == Op::LocalGet || 
+            v.op == Op::LocalSet || v.op == Op::LocalTee) {
+            local_indices.insert(v.paramIndex);
+        }
+    }
+    
+    std::unordered_map<int, ir_ref> local_vars;
+    for (int idx : local_indices) {
+        char name[32];
+        snprintf(name, sizeof(name), "local_%d", idx);
+        ir_ref var = ir_VAR(IR_I32, name);
+        local_vars[idx] = var;
+        
+        // 如果是参数，初始化 VAR
+        auto it = param_index_to_value_id.find(idx);
+        if (it != param_index_to_value_id.end()) {
+            int value_id = it->second;
+            ir_VSTORE(var, value_map[value_id]);
+        }
+    }
+
     // 遍歷所有 ValueIR 指令
     for (size_t i = 0; i < values.size(); i++) {
         const Value& val = values[i];
+
+        // 跳过已经处理的参数
+        if (val.op == Op::Param) {
+            continue;
+        }
                 
         switch (val.op) {
-        case Op::Param: {
-            char name[32];
-            snprintf(name, sizeof(name), "p%u", param_idx);
-            ir_ref param = ir_PARAM(IR_I32, name, param_idx + 1);
-            value_map[i] = param;
-            param_idx++;
-            break;
-        }
         
         case Op::Add: {
             // 檢查 lhs 和 rhs 是否有效
@@ -341,6 +381,43 @@ IRFunction* IRBridge::build(const ValueIR& values) {
         
         case Op::Const: {
             value_map[i] = ir_CONST_I32(val.constValue);
+            break;
+        }
+
+        case Op::Select: {
+            if (val.operands.size() != 3) break;
+            
+            int cond_idx = val.operands[0];
+            int true_idx = val.operands[1];
+            int false_idx = val.operands[2];
+            
+            // 边界检查
+            if (cond_idx < 0 || cond_idx >= (int)i) break;
+            if (true_idx < 0 || true_idx >= (int)i) break;
+            if (false_idx < 0 || false_idx >= (int)i) break;
+            
+            ir_ref cond_ref = value_map[cond_idx];
+            ir_ref true_ref = value_map[true_idx];
+            ir_ref false_ref = value_map[false_idx];
+            
+            // 创建 if 节点
+            ir_ref if_node = ir_IF(cond_ref);
+            
+            // True 分支
+            ir_IF_TRUE(if_node);
+            ir_ref end_true = ir_END();
+            
+            // False 分支
+            ir_IF_FALSE(if_node);
+            ir_ref end_false = ir_END();
+            
+            // 合并（不要赋值！）
+            ir_MERGE_2(end_true, end_false);  // ← 这里不赋值
+            
+            // 创建 PHI 节点
+            ir_ref result = ir_PHI_2(IR_I32, false_ref, true_ref);
+            
+            value_map[i] = result;
             break;
         }
         

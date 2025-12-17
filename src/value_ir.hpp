@@ -40,6 +40,8 @@ enum class Op {
     LocalSet,    // 设置局部变量（不返回值）
     LocalTee,    // 设置局部变量并返回值
 
+    Select,   // 新增：三元运算符
+
     Return
 };
 
@@ -97,6 +99,7 @@ inline std::string opToString(Op op) {  // 改：Op → ValueOp
     case Op::LocalGet: return "LocalGet";
     case Op::LocalSet: return "LocalSet";
     case Op::LocalTee: return "LocalTee";
+    case Op::Select:   return "Select";
     case Op::Return: return "Return";
     default:         return "Unknown";
     }
