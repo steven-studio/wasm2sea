@@ -13,6 +13,20 @@ enum class Op {
     Div_U,     // 新增：無號除法
     Rem_S,     // 新增：有號取餘
     Rem_U,     // 新增：無號取餘
+
+    // 比較指令（新增）
+    Eq,       // ==
+    Ne,       // !=
+    Lt_S,     // < (signed)
+    Lt_U,     // < (unsigned)
+    Gt_S,     // > (signed)
+    Gt_U,     // > (unsigned)
+    Le_S,     // <= (signed)
+    Le_U,     // <= (unsigned)
+    Ge_S,     // >= (signed)
+    Ge_U,     // >= (unsigned)
+    Eqz,      // == 0 (特殊，只有一個操作數)
+
     Return
 };
 
@@ -46,6 +60,17 @@ inline std::string opToString(Op op) {  // 改：Op → ValueOp
     case Op::Div_U:  return "Div_U";    // 新增：無號除法
     case Op::Rem_S:  return "Rem_S";    // 新增：有號取餘
     case Op::Rem_U:  return "Rem_U";    // 新增：無號取餘
+    case Op::Eq:    return "Eq";
+    case Op::Ne:    return "Ne";
+    case Op::Lt_S:  return "Lt_S";
+    case Op::Lt_U:  return "Lt_U";
+    case Op::Gt_S:  return "Gt_S";
+    case Op::Gt_U:  return "Gt_U";
+    case Op::Le_S:  return "Le_S";
+    case Op::Le_U:  return "Le_U";
+    case Op::Ge_S:  return "Ge_S";
+    case Op::Ge_U:  return "Ge_U";
+    case Op::Eqz:   return "Eqz";
     default:         return "Unknown";
     }
     return "?";

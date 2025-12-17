@@ -102,6 +102,45 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             stack.push_back(id);
             break;
         }
+
+        // 比較運算（二元，像 Add/Sub 一樣處理）
+        case WasmOp::I32Eq: {
+            int rhs = stack.back(); stack.pop_back();
+            int lhs = stack.back(); stack.pop_back();
+            int id = newValue(Op::Eq);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I32Ne: {
+            int rhs = stack.back(); stack.pop_back();
+            int lhs = stack.back(); stack.pop_back();
+            int id = newValue(Op::Ne);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I32LtS: {
+            int rhs = stack.back(); stack.pop_back();
+            int lhs = stack.back(); stack.pop_back();
+            int id = newValue(Op::Lt_S);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+
+        // Eqz（一元運算，特殊處理）
+        case WasmOp::I32Eqz: {
+            int val = stack.back(); stack.pop_back();
+            int id = newValue(Op::Eqz);
+            values[id].lhs = val;  // 只有一個操作數
+            stack.push_back(id);
+            break;
+        }
+
         case WasmOp::Return: {
             int v = stack.back(); stack.pop_back();
             int id = newValue(Op::Return);

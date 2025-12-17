@@ -55,6 +55,39 @@ public:
         case RemUInt32:  // ← 新增：無號取餘
             instructions.push_back({WasmOp::I32RemU, 0});
             break;
+
+        // 比較運算（新增）
+        case EqInt32:
+            instructions.push_back({WasmOp::I32Eq, 0});
+            break;
+        case NeInt32:
+            instructions.push_back({WasmOp::I32Ne, 0});
+            break;
+        case LtSInt32:
+            instructions.push_back({WasmOp::I32LtS, 0});
+            break;
+        case LtUInt32:
+            instructions.push_back({WasmOp::I32LtU, 0});
+            break;
+        case GtSInt32:
+            instructions.push_back({WasmOp::I32GtS, 0});
+            break;
+        case GtUInt32:
+            instructions.push_back({WasmOp::I32GtU, 0});
+            break;
+        case LeSInt32:
+            instructions.push_back({WasmOp::I32LeS, 0});
+            break;
+        case LeUInt32:
+            instructions.push_back({WasmOp::I32LeU, 0});
+            break;
+        case GeSInt32:
+            instructions.push_back({WasmOp::I32GeS, 0});
+            break;
+        case GeUInt32:
+            instructions.push_back({WasmOp::I32GeU, 0});
+            break;
+
         default:
             fprintf(stderr, "Warning: Unsupported binary op: %d\n", curr->op);
             break;
@@ -75,7 +108,20 @@ public:
         instructions.push_back({WasmOp::Return, 0});
     }
     
-    // 其他指令的處理...
+    // 新增：處理 Unary 運算（eqz 是一元運算）
+    void visitUnary(Unary* curr) {
+        visit(curr->value);
+        
+        switch (curr->op) {
+        case EqZInt32:
+            instructions.push_back({WasmOp::I32Eqz, 0});
+            break;
+        default:
+            fprintf(stderr, "Warning: Unsupported unary op: %d\n", curr->op);
+            break;
+        }
+    }
+
     void visitBlock(Block* curr) {
         for (auto* expr : curr->list) {
             visit(expr);

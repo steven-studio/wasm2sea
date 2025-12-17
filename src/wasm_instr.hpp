@@ -13,7 +13,20 @@ enum class WasmOp {
     I32DivS,
     I32DivU,
     I32RemS,
-    I32RemU
+    I32RemU,
+
+    // 比較指令
+    I32Eq,
+    I32Ne,
+    I32LtS,
+    I32LtU,
+    I32GtS,
+    I32GtU,
+    I32LeS,
+    I32LeU,
+    I32GeS,
+    I32GeU,
+    I32Eqz
 };
 
 struct WasmInstr {
