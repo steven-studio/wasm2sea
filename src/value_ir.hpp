@@ -35,6 +35,11 @@ enum class Op {
     // 一元位運算
     Clz, Ctz, Popcnt,
 
+    // 局部变量操作（新增）
+    LocalGet,    // 读取局部变量
+    LocalSet,    // 设置局部变量（不返回值）
+    LocalTee,    // 设置局部变量并返回值
+
     Return
 };
 
@@ -89,6 +94,9 @@ inline std::string opToString(Op op) {  // 改：Op → ValueOp
     case Op::Clz:    return "Clz";
     case Op::Ctz:    return "Ctz";
     case Op::Popcnt: return "Popcnt";
+    case Op::LocalGet: return "LocalGet";
+    case Op::LocalSet: return "LocalSet";
+    case Op::LocalTee: return "LocalTee";
     case Op::Return: return "Return";
     default:         return "Unknown";
     }

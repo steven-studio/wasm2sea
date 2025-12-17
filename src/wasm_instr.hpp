@@ -3,8 +3,10 @@
 #include <vector>
 
 enum class WasmOp {
+    FuncInfo,    // 新增：存储函数元信息（参数数量等）
     LocalGet,
     LocalSet,
+    LocalTee,
     I32Const,
     I32Add,
     I32Sub,
@@ -34,9 +36,40 @@ enum class WasmOp {
     I32Clz, I32Ctz, I32Popcnt
 };
 
-struct WasmInstr {
+struct Instr {
     WasmOp op;
-    int operand;  // 用於 LocalGet index, I32Const value 等
+    int operand;
 };
 
-using InstrSeq = std::vector<WasmInstr>;
+struct InstrSeq {
+    std::vector<Instr> instructions;
+    size_t numParams = 0;  // 新增
+    
+    // 为了向后兼容
+    void push_back(const Instr& instr) {
+        instructions.push_back(instr);
+    }
+
+    // 添加 insert 方法
+    void insert(std::vector<Instr>::iterator pos, 
+                std::vector<Instr>::iterator first,
+                std::vector<Instr>::iterator last) {
+        instructions.insert(pos, first, last);
+    }
+    
+    size_t size() const {
+        return instructions.size();
+    }
+
+    bool empty() const {  // ← 确保有这个方法
+        return instructions.empty();
+    }
+    
+    auto begin() { return instructions.begin(); }
+    auto end() { return instructions.end(); }
+    auto begin() const { return instructions.begin(); }
+    auto end() const { return instructions.end(); }
+    
+    Instr& operator[](size_t i) { return instructions[i]; }
+    const Instr& operator[](size_t i) const { return instructions[i]; }
+};

@@ -5,9 +5,18 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
     ValueIR values;
     std::vector<int> stack;  // 存 SSA id
 
-    // param index -> SSA id
-    std::unordered_map<int,int> paramId;
-
+    // 局部变量管理：local index -> 当前的 SSA id
+    std::unordered_map<int, int> localVars;
+    
+    // 读取函数元信息（参数数量）
+    size_t numParams = 0;
+    size_t start_idx = 0;
+    
+    if (!code.empty() && code[0].op == WasmOp::FuncInfo) {
+        numParams = static_cast<size_t>(code[0].operand);
+        start_idx = 1;
+    }
+    
     auto newValue = [&](Op op) -> int {
         int id = static_cast<int>(values.size());
         Value v;
@@ -17,22 +26,51 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
         return id;
     };
 
-    auto getParam = [&](int idx) -> int {
-        auto it = paramId.find(idx);
-        if (it != paramId.end()) return it->second;
-        int id = newValue(Op::Param);
-        values[id].paramIndex = idx;
-        paramId[idx] = id;
-        return id;
-    };
-
     for (auto& ins : code) {
         switch (ins.op) {
         case WasmOp::LocalGet: {
-            int id = getParam(ins.operand);
-            stack.push_back(id);
+            // 查找局部变量当前值
+            auto it = localVars.find(ins.operand);
+            if (it != localVars.end()) {
+                // 已经被赋值过，使用当前值
+                stack.push_back(it->second);
+            } else {
+                // 第一次访问
+                if (ins.operand < (int)numParams) {
+                    // 是参数
+                    int id = newValue(Op::Param);
+                    values[id].paramIndex = ins.operand;
+                    localVars[ins.operand] = id;
+                    stack.push_back(id);
+                } else {
+                    // 是未初始化的局部变量，默认为 0
+                    int id = newValue(Op::Const);
+                    values[id].constValue = 0;
+                    localVars[ins.operand] = id;
+                    stack.push_back(id);
+                }
+            }
             break;
         }
+
+        case WasmOp::LocalSet: {
+            if (stack.empty()) break;
+            int val = stack.back(); 
+            stack.pop_back();
+            // 更新局部变量的当前值
+            localVars[ins.operand] = val;
+            break;
+        }
+        
+        case WasmOp::LocalTee: {
+            if (stack.empty()) break;
+            int val = stack.back(); 
+            // tee 不 pop，值留在栈上
+            localVars[ins.operand] = val;
+            // 栈上已经有值了，不需要再 push
+            break;
+        }
+
         case WasmOp::I32Const: {
             int id = newValue(Op::Const);
             values[id].constValue = ins.operand;
