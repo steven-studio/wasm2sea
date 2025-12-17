@@ -13,166 +13,115 @@
 using namespace wasm;
 
 // 輔助函數：遍歷 Binaryen Expression 並轉換為 InstrSeq
-class WasmToInstrSeqConverter : public ExpressionStackWalker<WasmToInstrSeqConverter> {
+class WasmToInstrSeqConverter : public Visitor<WasmToInstrSeqConverter> {
 public:
     InstrSeq instructions;
-    size_t numParams = 0;  // 新增：存储参数数量
-
-    void visitLocalGet(LocalGet* curr) {
-        instructions.push_back({WasmOp::LocalGet, (int)curr->index});
-    }
-    
-    void visitLocalSet(LocalSet* curr) {
-        // 先處理要設定的值
-        visit(curr->value);
-        // TODO: 如果需要 LocalSet 指令
-        // 使用 isTee() 判断是 local.tee 还是 local.set
-        if (curr->isTee()) {
-            instructions.push_back({WasmOp::LocalTee, (int)curr->index});
-        } else {
-            instructions.push_back({WasmOp::LocalSet, (int)curr->index});
-        }
-    }
-    
-    void visitBinary(Binary* curr) {
-        // 先處理左右運算元
-        visit(curr->left);
-        visit(curr->right);
+    void visitExpression(Expression* curr) {
+        // 手动控制遍历顺序
         
-        // 根據運算類型產生指令
-        switch (curr->op) {
-        case AddInt32:
-            instructions.push_back({WasmOp::I32Add, 0});
-            break;
-        case SubInt32:
-            instructions.push_back({WasmOp::I32Sub, 0});
-            break;
-        case MulInt32:
-            instructions.push_back({WasmOp::I32Mul, 0});
-            break;
-        case DivSInt32:  // ← 新增：有號除法
-            instructions.push_back({WasmOp::I32DivS, 0});
-            break;
-        case DivUInt32:  // ← 新增：無號除法
-            instructions.push_back({WasmOp::I32DivU, 0});
-            break;
-        case RemSInt32:  // ← 新增：有號取餘
-            instructions.push_back({WasmOp::I32RemS, 0});
-            break;
-        case RemUInt32:  // ← 新增：無號取餘
-            instructions.push_back({WasmOp::I32RemU, 0});
-            break;
-
-        // 比較運算（新增）
-        case EqInt32:
-            instructions.push_back({WasmOp::I32Eq, 0});
-            break;
-        case NeInt32:
-            instructions.push_back({WasmOp::I32Ne, 0});
-            break;
-        case LtSInt32:
-            instructions.push_back({WasmOp::I32LtS, 0});
-            break;
-        case LtUInt32:
-            instructions.push_back({WasmOp::I32LtU, 0});
-            break;
-        case GtSInt32:
-            instructions.push_back({WasmOp::I32GtS, 0});
-            break;
-        case GtUInt32:
-            instructions.push_back({WasmOp::I32GtU, 0});
-            break;
-        case LeSInt32:
-            instructions.push_back({WasmOp::I32LeS, 0});
-            break;
-        case LeUInt32:
-            instructions.push_back({WasmOp::I32LeU, 0});
-            break;
-        case GeSInt32:
-            instructions.push_back({WasmOp::I32GeS, 0});
-            break;
-        case GeUInt32:
-            instructions.push_back({WasmOp::I32GeU, 0});
-            break;
-
-        case AndInt32:
-            instructions.push_back({WasmOp::I32And, 0});
-            break;
-        case OrInt32:
-            instructions.push_back({WasmOp::I32Or, 0});
-            break;
-        case XorInt32:
-            instructions.push_back({WasmOp::I32Xor, 0});
-            break;
-        case ShlInt32:
-            instructions.push_back({WasmOp::I32Shl, 0});
-            break;
-        case ShrSInt32:
-            instructions.push_back({WasmOp::I32ShrS, 0});
-            break;
-        case ShrUInt32:
-            instructions.push_back({WasmOp::I32ShrU, 0});
-            break;
-
-        default:
-            fprintf(stderr, "Warning: Unsupported binary op: %d\n", curr->op);
-            break;
+        if (auto* localGet = curr->dynCast<LocalGet>()) {
+            instructions.push_back({WasmOp::LocalGet, (int)localGet->index});
         }
-    }
-    
-    void visitConst(Const* curr) {
-        if (curr->type == Type::i32) {
-            instructions.push_back({WasmOp::I32Const, curr->value.geti32()});
+        else if (auto* cnst = curr->dynCast<Const>()) {
+            if (cnst->type == Type::i32) {
+                instructions.push_back({WasmOp::I32Const, cnst->value.geti32()});
+            }
         }
-        // 可以加其他類型
-    }
-    
-    void visitReturn(Return* curr) {
-        if (curr->value) {
-            visit(curr->value);
+        else if (auto* bin = curr->dynCast<Binary>()) {
+            // 后序遍历：先左后右再操作符
+            visitExpression(bin->left);
+            visitExpression(bin->right);
+            
+            switch (bin->op) {
+            // 算术运算
+            case AddInt32: instructions.push_back({WasmOp::I32Add, 0}); break;
+            case SubInt32: instructions.push_back({WasmOp::I32Sub, 0}); break;
+            case MulInt32: instructions.push_back({WasmOp::I32Mul, 0}); break;
+            case DivSInt32: instructions.push_back({WasmOp::I32DivS, 0}); break;
+            case DivUInt32: instructions.push_back({WasmOp::I32DivU, 0}); break;
+            case RemSInt32: instructions.push_back({WasmOp::I32RemS, 0}); break;
+            case RemUInt32: instructions.push_back({WasmOp::I32RemU, 0}); break;
+            
+            // 比较运算
+            case EqInt32: instructions.push_back({WasmOp::I32Eq, 0}); break;
+            case NeInt32: instructions.push_back({WasmOp::I32Ne, 0}); break;
+            case LtSInt32: instructions.push_back({WasmOp::I32LtS, 0}); break;
+            case LtUInt32: instructions.push_back({WasmOp::I32LtU, 0}); break;
+            case GtSInt32: instructions.push_back({WasmOp::I32GtS, 0}); break;
+            case GtUInt32: instructions.push_back({WasmOp::I32GtU, 0}); break;
+            case LeSInt32: instructions.push_back({WasmOp::I32LeS, 0}); break;
+            case LeUInt32: instructions.push_back({WasmOp::I32LeU, 0}); break;
+            case GeSInt32: instructions.push_back({WasmOp::I32GeS, 0}); break;
+            case GeUInt32: instructions.push_back({WasmOp::I32GeU, 0}); break;
+            
+            // 位运算
+            case AndInt32: instructions.push_back({WasmOp::I32And, 0}); break;
+            case OrInt32: instructions.push_back({WasmOp::I32Or, 0}); break;
+            case XorInt32: instructions.push_back({WasmOp::I32Xor, 0}); break;
+            case ShlInt32: instructions.push_back({WasmOp::I32Shl, 0}); break;
+            case ShrSInt32: instructions.push_back({WasmOp::I32ShrS, 0}); break;
+            case ShrUInt32: instructions.push_back({WasmOp::I32ShrU, 0}); break;
+
+            default:
+                fprintf(stderr, "Warning: Unsupported binary op: %d\n", bin->op);
+                break;
+            }
         }
-        instructions.push_back({WasmOp::Return, 0});
-    }
-    
-    // 新增：處理 Unary 運算（eqz 是一元運算）
-    void visitUnary(Unary* curr) {
-        visit(curr->value);
-        
-        switch (curr->op) {
-        case EqZInt32:
-            instructions.push_back({WasmOp::I32Eqz, 0});
-            break;
-        case ClzInt32:
-            instructions.push_back({WasmOp::I32Clz, 0});
-            break;
-        case CtzInt32:
-            instructions.push_back({WasmOp::I32Ctz, 0});
-            break;
-        case PopcntInt32:
-            instructions.push_back({WasmOp::I32Popcnt, 0});
-            break;
-
-        default:
-            fprintf(stderr, "Warning: Unsupported unary op: %d\n", curr->op);
-            break;
+        else if (auto* unary = curr->dynCast<Unary>()) {
+            visitExpression(unary->value);
+            switch (unary->op) {
+            case EqZInt32: instructions.push_back({WasmOp::I32Eqz, 0}); break;
+            case ClzInt32: instructions.push_back({WasmOp::I32Clz, 0}); break;
+            case CtzInt32: instructions.push_back({WasmOp::I32Ctz, 0}); break;
+            case PopcntInt32: instructions.push_back({WasmOp::I32Popcnt, 0}); break;
+            default:
+                fprintf(stderr, "Warning: Unsupported unary op: %d\n", unary->op);
+                break;
+            }
         }
-    }
-
-    void visitSelect(Select* curr) {
-        // Binaryen 的 Select 有 3 个操作数
-        // condition, ifTrue, ifFalse
-        
-        // 按照栈的顺序访问
-        visit(curr->ifFalse);    // 先访问 false
-        visit(curr->ifTrue);     // 再访问 true
-        visit(curr->condition);  // 最后访问 condition
-        
-        instructions.push_back({WasmOp::Select, 0});
-    }
-
-    void visitBlock(Block* curr) {
-        for (auto* expr : curr->list) {
-            visit(expr);
+        else if (auto* ifExpr = curr->dynCast<If>()) {
+            // 先访问条件
+            visitExpression(ifExpr->condition);
+            
+            // If 指令
+            instructions.push_back({WasmOp::If, 0});
+            
+            // Then 分支
+            visitExpression(ifExpr->ifTrue);
+            
+            // Else 分支
+            if (ifExpr->ifFalse) {
+                instructions.push_back({WasmOp::Else, 0});
+                visitExpression(ifExpr->ifFalse);
+            }
+            
+            // End
+            instructions.push_back({WasmOp::End, 0});
+        }
+        else if (auto* block = curr->dynCast<Block>()) {
+            for (auto* expr : block->list) {
+                visitExpression(expr);
+            }
+        }
+        else if (auto* ret = curr->dynCast<Return>()) {
+            if (ret->value) {
+                visitExpression(ret->value);
+            }
+            instructions.push_back({WasmOp::Return, 0});
+        }
+        else if (auto* localSet = curr->dynCast<LocalSet>()) {
+            visitExpression(localSet->value);
+            if (localSet->isTee()) {
+                instructions.push_back({WasmOp::LocalTee, (int)localSet->index});
+            } else {
+                instructions.push_back({WasmOp::LocalSet, (int)localSet->index});
+            }
+        }
+        else if (auto* select = curr->dynCast<Select>()) {
+            visitExpression(select->ifFalse);
+            visitExpression(select->ifTrue);
+            visitExpression(select->condition);
+            instructions.push_back({WasmOp::Select, 0});
         }
     }
 };
@@ -239,9 +188,17 @@ InstrSeq readWasmFile(const std::string& filename) {
     
     // 使用 walker 轉換
     WasmToInstrSeqConverter converter;
-    converter.numParams = numParams;  // 传递参数数量
-    converter.walk(func->body);
+    // converter.numParams = numParams;  // ← 删除这行，Visitor 不需要
+    converter.visitExpression(func->body);  // ← 改用 visitExpression
     
+    // // 添加调试输出：
+    // printf("Debug: Generated instructions:\n");
+    // for (size_t i = 0; i < converter.instructions.size(); i++) {
+    //     printf("  [%zu] op=%d, operand=%d\n", 
+    //         i, (int)converter.instructions[i].op, 
+    //         converter.instructions[i].operand);
+    // }
+
     // 构建返回结果
     InstrSeq result;
     result.push_back({WasmOp::FuncInfo, (int)numParams});  // 第一条指令存储参数数量

@@ -252,7 +252,15 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             
             ir_ref lhs_ref = value_map[val.lhs];
             ir_ref rhs_ref = value_map[val.rhs];
+
+            // 调试输出
+            printf("DEBUG Gt_S: v%d = Gt_S(v%d, v%d)\n", (int)i, val.lhs, val.rhs);
+            printf("  lhs_ref=%d, rhs_ref=%d\n", lhs_ref, rhs_ref);
+
             value_map[i] = ir_GT(lhs_ref, rhs_ref);
+
+            printf("  result_ref=%d\n", value_map[i]);
+
             break;
         }
 
@@ -420,6 +428,12 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             value_map[i] = result;
             break;
         }
+
+        case Op::If:
+        case Op::Else:
+        case Op::End:
+            // 这些已经在 lower 阶段处理了
+            break;
         
         default:
             fprintf(stderr, "Unsupported Op: %d\n", (int)val.op);

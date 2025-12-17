@@ -4,8 +4,6 @@
 ValueIR lowerWasmToSsa(const InstrSeq& code) {
     ValueIR values;
     std::vector<int> stack;  // 存 SSA id
-
-    // 局部变量管理：local index -> 当前的 SSA id
     std::unordered_map<int, int> localVars;
     
     // 读取函数元信息（参数数量）
@@ -26,8 +24,91 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
         return id;
     };
 
-    for (auto& ins : code) {
+    // 控制流栈：记录 if/else 的信息
+    struct ControlFrame {
+        int if_id;           // if 指令的 value id
+        int cond_id;         // 条件的 value id
+        std::vector<int> then_values;  // then 分支产生的值
+        std::vector<int> else_values;  // else 分支产生的值
+        size_t stack_size;   // if 之前的栈大小
+    };
+    std::vector<ControlFrame> control_stack;
+
+    for (size_t i = start_idx; i < code.size(); i++) {
+        auto& ins = code[i];
+
         switch (ins.op) {
+
+        case WasmOp::If: {
+            // 弹出条件
+            if (stack.empty()) break;
+            int cond = stack.back();
+            stack.pop_back();
+            
+            // 创建 If 节点
+            int if_id = newValue(Op::If);
+            values[if_id].lhs = cond;
+            
+            // 记录控制流信息
+            ControlFrame frame;
+            frame.if_id = if_id;
+            frame.cond_id = cond;
+            frame.stack_size = stack.size();
+            control_stack.push_back(frame);
+            break;
+        }
+
+        case WasmOp::Else: {
+            if (control_stack.empty()) break;
+            
+            // 记录 then 分支的结果
+            if (stack.size() > control_stack.back().stack_size) {
+                int then_val = stack.back();
+                stack.pop_back();
+                control_stack.back().then_values.push_back(then_val);
+            }
+            
+            // 创建 Else 节点
+            int else_id = newValue(Op::Else);
+            break;
+        }
+
+        case WasmOp::End: {
+            if (control_stack.empty()) break;
+            
+            ControlFrame frame = control_stack.back();
+            control_stack.pop_back();
+            
+            // 记录 else 分支的结果（如果有）
+            if (stack.size() > frame.stack_size) {
+                int else_val = stack.back();
+                stack.pop_back();
+                frame.else_values.push_back(else_val);
+            }
+            
+            // 创建 End 节点并生成 Select/Phi
+            int end_id = newValue(Op::End);
+            
+            // 如果 then 和 else 都有返回值，创建一个选择
+            if (!frame.then_values.empty() && !frame.else_values.empty()) {
+                int select_id = newValue(Op::Select);
+                values[select_id].operands = {
+                    frame.cond_id,
+                    frame.else_values[0],   // ← 交换：else 在前
+                    frame.then_values[0]    // ← 交换：then 在后
+                };
+                stack.push_back(select_id);
+            } else if (!frame.then_values.empty()) {
+                // 只有 then 分支有值
+                stack.push_back(frame.then_values[0]);
+            } else if (!frame.else_values.empty()) {
+                // 只有 else 分支有值
+                stack.push_back(frame.else_values[0]);
+            }
+            break;
+        }
+
+
         case WasmOp::LocalGet: {
             // 查找局部变量当前值
             auto it = localVars.find(ins.operand);
@@ -164,6 +245,16 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             int rhs = stack.back(); stack.pop_back();
             int lhs = stack.back(); stack.pop_back();
             int id = newValue(Op::Lt_S);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I32GtS: {
+            if (stack.size() < 2) break;
+            int rhs = stack.back(); stack.pop_back();
+            int lhs = stack.back(); stack.pop_back();
+            int id = newValue(Op::Gt_S);
             values[id].lhs = lhs;
             values[id].rhs = rhs;
             stack.push_back(id);

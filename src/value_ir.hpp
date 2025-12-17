@@ -42,6 +42,11 @@ enum class Op {
 
     Select,   // 新增：三元运算符
 
+    // 控制流（新增）
+    If,           // if 开始
+    Else,         // else 分支
+    End,          // end 结束
+
     Return
 };
 
@@ -100,6 +105,9 @@ inline std::string opToString(Op op) {  // 改：Op → ValueOp
     case Op::LocalSet: return "LocalSet";
     case Op::LocalTee: return "LocalTee";
     case Op::Select:   return "Select";
+    case Op::If:   return "If";
+    case Op::Else: return "Else";
+    case Op::End:  return "End";
     case Op::Return: return "Return";
     default:         return "Unknown";
     }
