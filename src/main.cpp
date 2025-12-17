@@ -57,13 +57,8 @@ int main(int argc, char* argv[]) {
             return 1;
         }
     } else {
-        // 預設範例
-        InstrSeq code = {
-            {WasmOp::LocalGet, 0},
-            {WasmOp::LocalGet, 1},
-            {WasmOp::I32Add, 0},
-            {WasmOp::Return, 0}
-        };
+        std::cout << "No input WASM file provided\n";
+        return 0;
     }
 
     // Step 1: Wasm → ValueIR (你的 SSA IR)

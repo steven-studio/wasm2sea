@@ -16,7 +16,8 @@ using namespace wasm;
 class WasmToInstrSeqConverter : public ExpressionStackWalker<WasmToInstrSeqConverter> {
 public:
     InstrSeq instructions;
-    
+    size_t numParams = 0;  // 新增：存储参数数量
+
     void visitLocalGet(LocalGet* curr) {
         instructions.push_back({WasmOp::LocalGet, (int)curr->index});
     }
@@ -25,6 +26,12 @@ public:
         // 先處理要設定的值
         visit(curr->value);
         // TODO: 如果需要 LocalSet 指令
+        // 使用 isTee() 判断是 local.tee 还是 local.set
+        if (curr->isTee()) {
+            instructions.push_back({WasmOp::LocalTee, (int)curr->index});
+        } else {
+            instructions.push_back({WasmOp::LocalSet, (int)curr->index});
+        }
     }
     
     void visitBinary(Binary* curr) {
@@ -213,12 +220,24 @@ InstrSeq readWasmFile(const std::string& filename) {
     } else {
         printf("Processing function: <unnamed>\n");
     }
+
+    // 获取参数数量
+    size_t numParams = func->getNumParams();
+    printf("Function has %zu parameters\n", numParams);
     
     // 使用 walker 轉換
     WasmToInstrSeqConverter converter;
+    converter.numParams = numParams;  // 传递参数数量
     converter.walk(func->body);
     
-    printf("Converted %zu instructions\n", converter.instructions.size());
+    // 构建返回结果
+    InstrSeq result;
+    result.push_back({WasmOp::FuncInfo, (int)numParams});  // 第一条指令存储参数数量
+    result.insert(result.end(), 
+                  converter.instructions.begin(), 
+                  converter.instructions.end());
     
-    return converter.instructions;
+    printf("Converted %zu instructions\n", result.size());
+    
+    return result;
 }
