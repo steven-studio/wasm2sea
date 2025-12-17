@@ -16,6 +16,19 @@ using namespace wasm;
 class WasmToInstrSeqConverter : public Visitor<WasmToInstrSeqConverter> {
 public:
     InstrSeq instructions;
+    std::vector<Name> label_stack;  // 添加标签栈
+    
+    // 查找标签深度
+    int getLabelDepth(Name label) {
+        // 从栈顶往下找（最内层是 0）
+        for (int i = (int)label_stack.size() - 1; i >= 0; i--) {
+            if (label_stack[i] == label) {
+                return (int)label_stack.size() - 1 - i;
+            }
+        }
+        return -1;  // 未找到
+    }
+
     void visitExpression(Expression* curr) {
         // 手动控制遍历顺序
         
@@ -97,6 +110,30 @@ public:
             
             // End
             instructions.push_back({WasmOp::End, 0});
+        }
+        else if (auto* loop = curr->dynCast<Loop>()) {
+            label_stack.push_back(loop->name);  // 压入标签
+            instructions.push_back({WasmOp::Loop, 0});
+            visitExpression(loop->body);
+            instructions.push_back({WasmOp::End, 0});
+            label_stack.pop_back();  // 弹出标签
+        }
+        else if (auto* br = curr->dynCast<Break>()) {
+            int depth = getLabelDepth(br->name);
+            if (depth < 0) {
+                fprintf(stderr, "Error: Unknown label in br: %s\n", 
+                        std::string(br->name.str).c_str());
+                return;
+            }
+            
+            if (br->condition) {
+                // br_if: 先计算条件
+                visitExpression(br->condition);
+                instructions.push_back({WasmOp::Br_if, depth});  // 使用深度
+            } else {
+                // br: 无条件跳转
+                instructions.push_back({WasmOp::Br, depth});  // 使用深度
+            }
         }
         else if (auto* block = curr->dynCast<Block>()) {
             for (auto* expr : block->list) {
