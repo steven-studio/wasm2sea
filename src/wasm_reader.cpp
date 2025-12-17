@@ -158,6 +158,18 @@ public:
         }
     }
 
+    void visitSelect(Select* curr) {
+        // Binaryen 的 Select 有 3 个操作数
+        // condition, ifTrue, ifFalse
+        
+        // 按照栈的顺序访问
+        visit(curr->ifFalse);    // 先访问 false
+        visit(curr->ifTrue);     // 再访问 true
+        visit(curr->condition);  // 最后访问 condition
+        
+        instructions.push_back({WasmOp::Select, 0});
+    }
+
     void visitBlock(Block* curr) {
         for (auto* expr : curr->list) {
             visit(expr);
