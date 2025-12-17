@@ -41,6 +41,11 @@ enum class WasmOp {
     Else,
     End,
 
+    // 新增
+    Loop,
+    Br,
+    Br_if,
+
     Return
 };
 

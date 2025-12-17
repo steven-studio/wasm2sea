@@ -47,6 +47,11 @@ enum class Op {
     Else,         // else 分支
     End,          // end 结束
 
+    // 新增循环
+    Loop,      // 循环开始
+    Br,        // 无条件跳转
+    Br_if,     // 条件跳转
+
     Return
 };
 
