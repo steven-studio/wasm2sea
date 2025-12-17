@@ -36,6 +36,11 @@ enum class WasmOp {
 
     Select,   // 新增
 
+    // 控制流（新增）
+    If,
+    Else,
+    End,
+
     Return
 };
 
