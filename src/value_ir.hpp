@@ -27,6 +27,14 @@ enum class Op {
     Ge_U,     // >= (unsigned)
     Eqz,      // == 0 (特殊，只有一個操作數)
 
+    // 位運算
+    And, Or, Xor,
+    Shl, Shr_S, Shr_U,
+    Rotl, Rotr,
+    
+    // 一元位運算
+    Clz, Ctz, Popcnt,
+
     Return
 };
 
@@ -55,7 +63,6 @@ inline std::string opToString(Op op) {  // 改：Op → ValueOp
     case Op::Add:    return "Add";      // 改：Op:: → ValueOp::
     case Op::Sub:    return "Sub";      // 改：Op:: → ValueOp::
     case Op::Mul:    return "Mul";      // 改：Op:: → ValueOp::
-    case Op::Return: return "Return";   // 改：Op:: → ValueOp::
     case Op::Div_S:  return "Div_S";    // 新增：有號除法
     case Op::Div_U:  return "Div_U";    // 新增：無號除法
     case Op::Rem_S:  return "Rem_S";    // 新增：有號取餘
@@ -71,6 +78,18 @@ inline std::string opToString(Op op) {  // 改：Op → ValueOp
     case Op::Ge_S:  return "Ge_S";
     case Op::Ge_U:  return "Ge_U";
     case Op::Eqz:   return "Eqz";
+    case Op::And:    return "And";
+    case Op::Or:     return "Or";
+    case Op::Xor:    return "Xor";
+    case Op::Shl:    return "Shl";
+    case Op::Shr_S:  return "Shr_S";
+    case Op::Shr_U:  return "Shr_U";
+    case Op::Rotl:   return "Rotl";
+    case Op::Rotr:   return "Rotr";
+    case Op::Clz:    return "Clz";
+    case Op::Ctz:    return "Ctz";
+    case Op::Popcnt: return "Popcnt";
+    case Op::Return: return "Return";
     default:         return "Unknown";
     }
     return "?";

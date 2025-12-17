@@ -26,7 +26,12 @@ enum class WasmOp {
     I32LeU,
     I32GeS,
     I32GeU,
-    I32Eqz
+    I32Eqz,
+
+    I32And, I32Or, I32Xor,
+    I32Shl, I32ShrS, I32ShrU,
+    I32Rotl, I32Rotr,
+    I32Clz, I32Ctz, I32Popcnt
 };
 
 struct WasmInstr {

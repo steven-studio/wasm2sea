@@ -88,6 +88,25 @@ public:
             instructions.push_back({WasmOp::I32GeU, 0});
             break;
 
+        case AndInt32:
+            instructions.push_back({WasmOp::I32And, 0});
+            break;
+        case OrInt32:
+            instructions.push_back({WasmOp::I32Or, 0});
+            break;
+        case XorInt32:
+            instructions.push_back({WasmOp::I32Xor, 0});
+            break;
+        case ShlInt32:
+            instructions.push_back({WasmOp::I32Shl, 0});
+            break;
+        case ShrSInt32:
+            instructions.push_back({WasmOp::I32ShrS, 0});
+            break;
+        case ShrUInt32:
+            instructions.push_back({WasmOp::I32ShrU, 0});
+            break;
+
         default:
             fprintf(stderr, "Warning: Unsupported binary op: %d\n", curr->op);
             break;
@@ -116,6 +135,16 @@ public:
         case EqZInt32:
             instructions.push_back({WasmOp::I32Eqz, 0});
             break;
+        case ClzInt32:
+            instructions.push_back({WasmOp::I32Clz, 0});
+            break;
+        case CtzInt32:
+            instructions.push_back({WasmOp::I32Ctz, 0});
+            break;
+        case PopcntInt32:
+            instructions.push_back({WasmOp::I32Popcnt, 0});
+            break;
+
         default:
             fprintf(stderr, "Warning: Unsupported unary op: %d\n", curr->op);
             break;
