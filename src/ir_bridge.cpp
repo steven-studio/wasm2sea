@@ -266,12 +266,65 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             break;
         }
 
+        case Op::And: {
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_AND_I32(lhs_ref, rhs_ref);
+            break;
+        }
+        case Op::Or: {
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_OR_I32(lhs_ref, rhs_ref);
+            break;
+        }
+        case Op::Xor: {
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_XOR_I32(lhs_ref, rhs_ref);
+            break;
+        }
+        case Op::Shl: {
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_SHL_I32(lhs_ref, rhs_ref);
+            break;
+        }
+        case Op::Shr_S: {
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_SAR_I32(lhs_ref, rhs_ref);  // SAR = Shift Arithmetic Right
+            break;
+        }
+        case Op::Shr_U: {
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_SHR_I32(lhs_ref, rhs_ref);  // SHR = Shift Right (logical)
+            break;
+        }
+
         case Op::Eqz: {
             if (val.lhs < 0 || val.lhs >= (int)i) break;
             
             ir_ref val_ref = value_map[val.lhs];
             ir_ref zero = ir_CONST_I32(0);
             value_map[i] = ir_EQ(val_ref, zero);  // eqz 等價於 == 0
+            break;
+        }
+
+        case Op::Clz: {
+            ir_ref val_ref = value_map[val.lhs];
+            value_map[i] = ir_CTLZ_I32(val_ref);  // Count Leading Zeros
+            break;
+        }
+        case Op::Ctz: {
+            ir_ref val_ref = value_map[val.lhs];
+            value_map[i] = ir_CTTZ_I32(val_ref);  // Count Trailing Zeros
+            break;
+        }
+        case Op::Popcnt: {
+            ir_ref val_ref = value_map[val.lhs];
+            value_map[i] = ir_CTPOP_I32(val_ref);  // Count Population (1 bits)
             break;
         }
         

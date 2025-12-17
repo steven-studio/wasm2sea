@@ -132,10 +132,72 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             break;
         }
 
+        case WasmOp::I32And: {
+            int rhs = stack.back(); stack.pop_back();
+            int lhs = stack.back(); stack.pop_back();
+            int id = newValue(Op::And);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I32Or: {
+            int rhs = stack.back(); stack.pop_back();
+            int lhs = stack.back(); stack.pop_back();
+            int id = newValue(Op::Or);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I32Xor: {
+            int rhs = stack.back(); stack.pop_back();
+            int lhs = stack.back(); stack.pop_back();
+            int id = newValue(Op::Xor);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I32Shl: {
+            int rhs = stack.back(); stack.pop_back();
+            int lhs = stack.back(); stack.pop_back();
+            int id = newValue(Op::Shl);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I32ShrS: {
+            int rhs = stack.back(); stack.pop_back();
+            int lhs = stack.back(); stack.pop_back();
+            int id = newValue(Op::Shr_S);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I32ShrU: {
+            int rhs = stack.back(); stack.pop_back();
+            int lhs = stack.back(); stack.pop_back();
+            int id = newValue(Op::Shr_U);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+
         // Eqz（一元運算，特殊處理）
         case WasmOp::I32Eqz: {
             int val = stack.back(); stack.pop_back();
             int id = newValue(Op::Eqz);
+            values[id].lhs = val;  // 只有一個操作數
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I32Clz: {
+            int val = stack.back(); stack.pop_back();
+            int id = newValue(Op::Clz);
             values[id].lhs = val;  // 只有一個操作數
             stack.push_back(id);
             break;
