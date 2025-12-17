@@ -165,6 +165,115 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             value_map[i] = ir_MOD_U32(lhs_ref, rhs_ref);  // ✅ 改成 U32
             break;
         }
+
+        case Op::Eq: {
+            if (val.lhs < 0 || val.lhs >= (int)i) break;
+            if (val.rhs < 0 || val.rhs >= (int)i) break;
+            
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_EQ(lhs_ref, rhs_ref);  // 注意：沒有 _I32 後綴
+            break;
+        }
+
+        case Op::Ne: {
+            if (val.lhs < 0 || val.lhs >= (int)i) break;
+            if (val.rhs < 0 || val.rhs >= (int)i) break;
+            
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_NE(lhs_ref, rhs_ref);
+            break;
+        }
+
+        case Op::Lt_S: {
+            if (val.lhs < 0 || val.lhs >= (int)i) break;
+            if (val.rhs < 0 || val.rhs >= (int)i) break;
+            
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_LT(lhs_ref, rhs_ref);  // 有號小於
+            break;
+        }
+
+        case Op::Lt_U: {
+            if (val.lhs < 0 || val.lhs >= (int)i) break;
+            if (val.rhs < 0 || val.rhs >= (int)i) break;
+            
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_ULT(lhs_ref, rhs_ref);  // 無號小於
+            break;
+        }
+
+        case Op::Gt_S: {
+            if (val.lhs < 0 || val.lhs >= (int)i) break;
+            if (val.rhs < 0 || val.rhs >= (int)i) break;
+            
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_GT(lhs_ref, rhs_ref);
+            break;
+        }
+
+        case Op::Gt_U: {
+            if (val.lhs < 0 || val.lhs >= (int)i) break;
+            if (val.rhs < 0 || val.rhs >= (int)i) break;
+            
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_UGT(lhs_ref, rhs_ref);
+            break;
+        }
+
+        case Op::Le_S: {
+            if (val.lhs < 0 || val.lhs >= (int)i) break;
+            if (val.rhs < 0 || val.rhs >= (int)i) break;
+            
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_LE(lhs_ref, rhs_ref);
+            break;
+        }
+
+        case Op::Le_U: {
+            if (val.lhs < 0 || val.lhs >= (int)i) break;
+            if (val.rhs < 0 || val.rhs >= (int)i) break;
+            
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_ULE(lhs_ref, rhs_ref);
+            break;
+        }
+
+        case Op::Ge_S: {
+            if (val.lhs < 0 || val.lhs >= (int)i) break;
+            if (val.rhs < 0 || val.rhs >= (int)i) break;
+            
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_GE(lhs_ref, rhs_ref);
+            break;
+        }
+
+        case Op::Ge_U: {
+            if (val.lhs < 0 || val.lhs >= (int)i) break;
+            if (val.rhs < 0 || val.rhs >= (int)i) break;
+            
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            value_map[i] = ir_UGE(lhs_ref, rhs_ref);
+            break;
+        }
+
+        case Op::Eqz: {
+            if (val.lhs < 0 || val.lhs >= (int)i) break;
+            
+            ir_ref val_ref = value_map[val.lhs];
+            ir_ref zero = ir_CONST_I32(0);
+            value_map[i] = ir_EQ(val_ref, zero);  // eqz 等價於 == 0
+            break;
+        }
         
         case Op::Return: {            
             if (val.lhs < 0 || val.lhs >= (int)i) {
