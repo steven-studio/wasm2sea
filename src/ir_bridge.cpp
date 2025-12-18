@@ -12,6 +12,14 @@ extern "C" {
 #include "ir.h"
 #include "ir_builder.h"
 }
+#include <stack>
+
+// 在 build() 函数中添加循环信息追踪
+struct LoopInfo {
+    ir_ref entry_point;  // 循环入口的控制流节点
+    std::unordered_map<int, ir_ref> phi_to_var;  // phi_id -> var_ref
+};
+std::stack<LoopInfo> loop_stack;
 
 IRBridge::IRBridge() {
     // 分配 ir_ctx 結構
@@ -33,7 +41,7 @@ IRFunction* IRBridge::build(const ValueIR& values) {
     // 重要：dstogov/ir 的巨集需要變數名為 'ctx'
     ir_ctx* ctx = ctx_;
 
-    ir_init(ctx_, IR_FUNCTION | IR_OPT_FOLDING, 128, 128);
+    ir_init(ctx_, IR_FUNCTION, 128, 128);
     
     // 開始建構 IR
     ir_START();
@@ -44,6 +52,9 @@ IRFunction* IRBridge::build(const ValueIR& values) {
     // 预先创建所有参数（按照 paramIndex 排序）
     std::map<int, int> param_index_to_value_id;  // paramIndex -> value id
     
+    // ← 添加这个！存储循环退出时的值
+    std::unordered_map<int, ir_ref> loop_exit_values;
+
     // 第一遍：找出所有参数及其 paramIndex
     for (size_t i = 0; i < values.size(); i++) {
         if (values[i].op == Op::Param) {
@@ -381,16 +392,25 @@ IRFunction* IRBridge::build(const ValueIR& values) {
         }
         
         case Op::Return: {            
-            if (val.lhs < 0 || val.lhs >= (int)i) {
-                fprintf(stderr, "ERROR: Invalid return lhs=%d\n", val.lhs);
-                break;
-            }
-
-            // ir_ref end = ir_END();  // ← 添加这行！确保控制流正确连接
+            // 从 VAR 加载最终值并返回
+            if (val.lhs < 0 || val.lhs >= (int)i) break;
             
-            ir_ref ret_val = value_map[val.lhs];
-            ir_ref end = ir_END();      // 封住當前控制流節點
-            (void)end;
+            const Value& ret_val_src = values[val.lhs];
+            ir_ref ret_val;
+            
+            if (ret_val_src.op == Op::Phi && ret_val_src.local_index >= 0) {
+                // 直接从 VAR 加载
+                int local_idx = ret_val_src.local_index;
+                if (local_vars.count(local_idx)) {
+                    ir_ref var_ref = local_vars[local_idx];
+                    ret_val = ir_VLOAD_I32(var_ref);
+                } else {
+                    ret_val = value_map[val.lhs];
+                }
+            } else {
+                ret_val = value_map[val.lhs];
+            }
+            
             ir_RETURN(ret_val);
             break;
         }
@@ -439,95 +459,75 @@ IRFunction* IRBridge::build(const ValueIR& values) {
 
         case Op::If:
         case Op::Else:
-        case Op::End:
-            // 这些已经在 lower 阶段处理了
+        case Op::End: {
+            // 如果是循环结束
+            if (!loop_stack.empty()) {
+                loop_stack.pop();
+            }
             break;
+        }
         
         case Op::Loop: {
-            // 创建循环开始节点
-            // LOOP_BEGIN 需要一个控制流输入
-            ir_ref loop_begin = ir_LOOP_BEGIN(ir_END());
-            value_map[i] = loop_begin;
+            // 创建循环入口
+            ir_ref loop_entry = ir_END();  // END (6)
             
-            printf("DEBUG: Created LOOP_BEGIN at v%d -> ir_ref %d\n", (int)i, loop_begin);
+            // 直接设置 control 为 loop_entry，不创建额外的 END
+            ctx_->control = loop_entry;
+            
+            LoopInfo info;
+            info.entry_point = loop_entry;
+            
+            for (const auto& [local_idx, var_ref] : local_vars) {
+                info.phi_to_var[local_idx] = var_ref;
+            }
+            
+            loop_stack.push(info);
+            value_map[i] = loop_entry;
             break;
         }
 
         case Op::Phi: {
-            printf("DEBUG: Processing PHI v%d, local_index=%d\n", (int)i, val.local_index);
-
-            // Phi 节点从对应的 VAR 加载当前值
+            // Phi 直接从 VAR 加载
             int local_idx = val.local_index;
-            
             if (local_vars.count(local_idx)) {
-                printf("DEBUG: Found VAR for local_%d\n", local_idx);
                 ir_ref var_ref = local_vars[local_idx];
                 ir_ref loaded = ir_VLOAD_I32(var_ref);
                 value_map[i] = loaded;
-                
-                printf("DEBUG: PHI v%d loads from VAR local_%d (ir %d) -> load result %d\n",
-                    (int)i, local_idx, var_ref, loaded);
-            } else {
-                printf("DEBUG: No VAR found for local_%d, using fallback\n", local_idx);
-                // Fallback: 使用初始值
-                if (!val.operands.empty()) {
-                    int initial_id = val.operands[0];
-                    if (initial_id >= 0 && initial_id < (int)i && value_map[initial_id] != 0) {
-                        value_map[i] = value_map[initial_id];
-                    }
-                }
             }
             break;
         }
 
         case Op::Br_if: {
-            if (val.lhs < 0 || val.lhs >= (int)i) break;
-            if (val.rhs < 0 || val.rhs >= (int)i) break;
-            
             ir_ref cond_ref = value_map[val.lhs];
-            ir_ref loop_ref = value_map[val.rhs];
             
-            printf("DEBUG: BR_IF v%d: condition=v%d (ir %d), target=v%d (ir %d)\n",
-                (int)i, val.lhs, cond_ref, val.rhs, loop_ref);
-            
-            // 在跳转前，更新所有循环变量
-            for (size_t j = 0; j < values.size(); j++) {
-                const Value& phi_val = values[j];
-                if (phi_val.op == Op::Phi && phi_val.operands.size() >= 2) {
-                    int local_idx = phi_val.local_index;
-                    int updated_val_id = phi_val.operands[1];  // 回边值
-                    
-                    if (local_vars.count(local_idx) && updated_val_id >= 0 && 
-                        updated_val_id < (int)value_map.size() && value_map[updated_val_id] != 0) {
-                        ir_ref var_ref = local_vars[local_idx];
-                        ir_ref updated_ref = value_map[updated_val_id];
+            // 更新循环变量
+            if (!loop_stack.empty()) {
+                LoopInfo& loop_info = loop_stack.top();
+                
+                // 找到所有 Phi 并更新对应的 VAR
+                for (size_t j = 0; j < i; j++) {
+                    if (values[j].op == Op::Phi && values[j].operands.size() >= 2) {
+                        int local_idx = values[j].local_index;
+                        int updated_val_id = values[j].operands[1];
                         
-                        ir_VSTORE(var_ref, updated_ref);
-                        printf("DEBUG: Update VAR local_%d with v%d (ir %d)\n",
-                            local_idx, updated_val_id, updated_ref);
+                        if (local_vars.count(local_idx) && value_map[updated_val_id] != IR_UNUSED) {
+                            ir_VSTORE(local_vars[local_idx], value_map[updated_val_id]);
+                        }
                     }
                 }
+                
+                // 创建条件分支
+                ir_ref if_node = ir_IF(cond_ref);
+                
+                // 条件为真：回到循环开始
+                ir_IF_TRUE(if_node);
+                ir_MERGE_WITH(loop_info.entry_point);
+                
+                // 条件为假：退出循环
+                ir_IF_FALSE(if_node);
+                // ir_END();
             }
             
-            // 创建条件分支
-            ir_ref if_node = ir_IF(cond_ref);
-            
-            // 条件为真：跳回循环开始
-            ir_IF_TRUE(if_node);
-            ir_ref end_true = ir_END();  // ← 添加这行
-            ir_IJMP(loop_ref);
-            
-            // 条件为假：退出循环
-            ir_IF_FALSE(if_node);
-            ir_ref end_false = ir_END();
-            
-            // 合并两个分支 ← 关键！
-            ir_MERGE_2(end_true, end_false);
-
-            // 关闭循环
-            ir_ref loop_end = ir_LOOP_END();  // ← 保存引用
-
-            value_map[i] = loop_end;
             break;
         }
 
