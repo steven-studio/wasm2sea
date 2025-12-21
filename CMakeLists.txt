@@ -17,6 +17,8 @@ set(BINARYEN_DIR ${CMAKE_SOURCE_DIR}/third_party/binaryen)
 # ===== 專案原始碼 =====
 set(SOURCES
     src/main.cpp
+    src/wasm_reader.cpp
+    src/wasm_dump.cpp
     src/wasm_lower.cpp
     src/value_ir_dump.cpp
     src/value_ir_eval.cpp

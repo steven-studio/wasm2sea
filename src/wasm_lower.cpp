@@ -184,6 +184,10 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             break;
         }
         case WasmOp::I32Add: {
+            if (stack.size() < 2) {
+                fprintf(stderr, "Error : Stack underflow at I32Add \n");
+                break;
+            }
             int rhs = stack.back(); stack.pop_back();
             int lhs = stack.back(); stack.pop_back();
             int id = newValue(Op::Add);

@@ -3,6 +3,7 @@
 #include "value_ir_dump.hpp"
 #include "ir_bridge.hpp"
 #include "wasm_reader.hpp"
+#include "wasm_dump.hpp"
 #include <iostream>
 #include <string>
 
@@ -64,6 +65,13 @@ int main(int argc, char* argv[]) {
     // Step 1: Wasm → ValueIR (你的 SSA IR)
     std::cout << "Step 1: Lowering Wasm to ValueIR\n";
     std::cout << "================================\n";
+
+    // ===== 添加这里 =====
+    printf("\n");
+    dumpInstrSeq(code);  // 打印 Stage 1 输出
+    printf("\n");
+    // ===================
+
     ValueIR values = lowerWasmToSsa(code);
     dumpValueIR(values);
 

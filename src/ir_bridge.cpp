@@ -17,7 +17,6 @@ extern "C" {
 // 在 build() 函数中添加循环信息追踪
 struct LoopInfo {
     ir_ref entry_point;  // 循环入口的控制流节点
-    std::unordered_map<int, ir_ref> phi_to_var;  // phi_id -> var_ref
 };
 std::stack<LoopInfo> loop_stack;
 
@@ -460,27 +459,19 @@ IRFunction* IRBridge::build(const ValueIR& values) {
         case Op::If:
         case Op::Else:
         case Op::End: {
-            // 如果是循环结束
             if (!loop_stack.empty()) {
                 loop_stack.pop();
             }
             break;
         }
-        
+
         case Op::Loop: {
             // 创建循环入口
-            ir_ref loop_entry = ir_END();  // END (6)
-            
-            // 直接设置 control 为 loop_entry，不创建额外的 END
+            ir_ref loop_entry = ir_END();
             ctx_->control = loop_entry;
             
             LoopInfo info;
             info.entry_point = loop_entry;
-            
-            for (const auto& [local_idx, var_ref] : local_vars) {
-                info.phi_to_var[local_idx] = var_ref;
-            }
-            
             loop_stack.push(info);
             value_map[i] = loop_entry;
             break;
@@ -491,6 +482,15 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             int local_idx = val.local_index;
             if (local_vars.count(local_idx)) {
                 ir_ref var_ref = local_vars[local_idx];
+
+                // ✅ 先存储 Phi 的初始值（operands[0]）
+                if (!val.operands.empty()) {
+                    int init_val_id = val.operands[0];
+                    if (value_map[init_val_id] != IR_UNUSED) {
+                        ir_VSTORE(var_ref, value_map[init_val_id]);
+                    }
+                }
+
                 ir_ref loaded = ir_VLOAD_I32(var_ref);
                 value_map[i] = loaded;
             }
@@ -500,11 +500,10 @@ IRFunction* IRBridge::build(const ValueIR& values) {
         case Op::Br_if: {
             ir_ref cond_ref = value_map[val.lhs];
             
-            // 更新循环变量
             if (!loop_stack.empty()) {
                 LoopInfo& loop_info = loop_stack.top();
                 
-                // 找到所有 Phi 并更新对应的 VAR
+                // 更新循环变量
                 for (size_t j = 0; j < i; j++) {
                     if (values[j].op == Op::Phi && values[j].operands.size() >= 2) {
                         int local_idx = values[j].local_index;
@@ -516,6 +515,10 @@ IRFunction* IRBridge::build(const ValueIR& values) {
                     }
                 }
                 
+                // 在 IF 之前添加 END
+                ir_ref end_ref = ir_END();
+                ctx_->control = end_ref;  // ← 关键：设置控制流！
+
                 // 创建条件分支
                 ir_ref if_node = ir_IF(cond_ref);
                 
@@ -525,9 +528,8 @@ IRFunction* IRBridge::build(const ValueIR& values) {
                 
                 // 条件为假：退出循环
                 ir_IF_FALSE(if_node);
-                // ir_END();
+                // 不调用 END，让控制流继续
             }
-            
             break;
         }
 
