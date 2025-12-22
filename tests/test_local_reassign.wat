@@ -1,0 +1,6 @@
+(func (param $x i32) (result i32)
+    (local $temp i32)
+    (local.set $temp (i32.const 10))
+    (local.set $temp (i32.add (local.get $temp ) (i32.const 5)))
+    (local.get $temp )
+)

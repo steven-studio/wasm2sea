@@ -39,6 +39,55 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
     };
     std::vector<ControlFrame> control_stack;
 
+    auto printState = [&](const std::string& instrName) {
+        fprintf(stderr, "[TRACE] After %s:\n", instrName.c_str());
+        
+        // 打印 localVars
+        fprintf(stderr, "  localVars = {");
+        if (localVars.empty()) {
+            fprintf(stderr, " }");
+        } else {
+            for (auto& [idx, vid] : localVars) {
+                fprintf(stderr, " %d→v%d", idx, vid);
+            }
+            fprintf(stderr, " }");
+        }
+        fprintf(stderr, "\n");
+        
+        // 打印 stack
+        fprintf(stderr, "  stack = [");
+        for (size_t i = 0; i < stack.size(); i++) {
+            fprintf(stderr, "v%d", stack[i]);
+            if (i < stack.size() - 1) fprintf(stderr, ", ");
+        }
+        fprintf(stderr, "]\n");
+        
+        // 打印最新创建的 values
+        if (!values.empty()) {
+            int lastId = values.size() - 1;
+            fprintf(stderr, "  last value: v%d = ", lastId);
+            switch (values[lastId].op) {
+            case Op::Param:
+                fprintf(stderr, "Param(%d)", values[lastId].paramIndex);
+                break;
+            case Op::Const:
+                fprintf(stderr, "Const(%d)", values[lastId].constValue);
+                break;
+            case Op::Add:
+                fprintf(stderr, "Add(v%d, v%d)", values[lastId].lhs, values[lastId].rhs);
+                break;
+            default:
+                fprintf(stderr, "...");
+            }
+            fprintf(stderr, "\n");
+        }
+        fprintf(stderr, "\n");
+    };
+
+    // 打印初始状态
+    fprintf(stderr, "=== SSA Lowering Trace ===\n");
+    fprintf(stderr, "numParams = %zu\n\n", numParams);
+
     for (size_t i = start_idx; i < code.size(); i++) {
         auto& ins = code[i];
 
@@ -140,6 +189,7 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             if (it != localVars.end()) {
                 // 已经被赋值过，使用当前值
                 stack.push_back(it->second);
+                printState("LocalGet(" + std::to_string(ins.operand) + ") - use existing");
             } else {
                 // 第一次访问
                 if (ins.operand < (int)numParams) {
@@ -148,23 +198,26 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
                     values[id].paramIndex = ins.operand;
                     localVars[ins.operand] = id;
                     stack.push_back(id);
+                    printState("LocalGet(" + std::to_string(ins.operand) + ") - create Param");
                 } else {
                     // 是未初始化的局部变量，默认为 0
                     int id = newValue(Op::Const);
                     values[id].constValue = 0;
                     localVars[ins.operand] = id;
                     stack.push_back(id);
+                    printState("LocalGet(" + std::to_string(ins.operand) + ") - create Const(0)");
                 }
             }
             break;
         }
 
         case WasmOp::LocalSet: {
-            if (stack.empty()) break;
-            int val = stack.back(); 
-            stack.pop_back();
-            // 更新局部变量的当前值
-            localVars[ins.operand] = val;
+            if (!stack.empty()) {
+                int val = stack.back();
+                stack.pop_back();
+                localVars[ins.operand] = val;
+                printState("LocalSet(" + std::to_string(ins.operand) + ")");
+            }
             break;
         }
         
@@ -181,6 +234,7 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             int id = newValue(Op::Const);
             values[id].constValue = ins.operand;
             stack.push_back(id);
+            printState("I32Const(" + std::to_string(ins.operand) + ")");
             break;
         }
         case WasmOp::I32Add: {
@@ -194,6 +248,7 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             values[id].lhs = lhs;
             values[id].rhs = rhs;
             stack.push_back(id);
+            printState("I32Add");
             break;
         }
         case WasmOp::I32Sub: {
