@@ -7,7 +7,7 @@ void dumpValueIR(const ValueIR& values) {
 
         switch (v.op) {
         case Op::Param:
-            std::cout << "(param " << v.paramIndex << ")";
+            std::cout << "(" << v.paramIndex << ")";
             break;
         case Op::Const:
             std::cout << "(" << v.constValue << ")";
@@ -44,6 +44,20 @@ void dumpValueIR(const ValueIR& values) {
         case Op::Ctz:     // 新增
         case Op::Popcnt:  // 新增
             std::cout << "(v" << v.lhs << ")";
+            break;
+        case Op::If:
+            std::cout << "(v" << v.lhs << ")";  // 显示条件
+            break;
+        case Op::Else:
+        case Op::End:
+            // 这两个没有参数，保持原样
+            break;
+        case Op::Select:
+            // Select(condition, false_val, true_val)
+            if (v.operands.size() >= 3) {
+                std::cout << "(v" << v.operands[0] << ", v" 
+                         << v.operands[1] << ", v" << v.operands[2] << ")";
+            }
             break;
         case Op::Phi:
             std::cout << "Phi(";
