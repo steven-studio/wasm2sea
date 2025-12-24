@@ -204,6 +204,33 @@ std::vector<FunctionResult> readWasmFile(const std::string& filename) {
         return {};
     }
     
+    printf("Module has %zu functions\n", module.functions.size());
+    
+    // ✅ 步骤 1: 先构建函数索引到导出名的映射
+    std::map<size_t, std::string> functionExports;
+    
+    printf("\n=== Debug: Building function export map ===\n");
+    printf("Total exports: %zu\n", module.exports.size());
+
+    size_t exportIndex = 0;
+    for (auto& exp : module.exports) {
+        printf("Export[%zu]: name='%s', kind=%d\n", 
+            exportIndex, exp->name.str.data(), (int)exp->kind);
+
+        if (exp->kind == ExternalKind::Function) {
+            if (exportIndex < module.functions.size()) {
+                functionExports[exportIndex] = exp->name.str;
+                printf("  -> ✓ Mapped: functionExports[%zu] = '%s'\n", 
+                    exportIndex, exp->name.str.data());
+            } else {
+                printf("  -> ✗ Warning: exportIndex >= functions.size()\n");
+            }
+            exportIndex++;
+        }
+    }
+
+    printf("=== Total mapped: %zu functions ===\n\n", functionExports.size());
+
     // 存储所有函数的转换结果
     std::vector<FunctionResult> results;
 
@@ -222,14 +249,20 @@ std::vector<FunctionResult> readWasmFile(const std::string& filename) {
 
         // 获取函数名（这部分你也缺少了）
         std::string funcName;
-        if (func->name.is()) {
-            // string_view 轉 string
-            funcName = std::string(func->name.str);
-            printf("Processing function: %s\n", funcName.c_str());
-        } else {
-            funcName = "func_" + std::to_string(i);  // ← 给未命名函数一个名字
-            printf("Processing function: %s (unnamed)\n", funcName.c_str());
+        // 优先：使用导出名
+        if (functionExports.find(i) != functionExports.end()) {
+            funcName = functionExports[i];
         }
+        // 次选：使用内部名
+        else if (func->name.is()) {
+            funcName = std::string(func->name.str);
+        }
+        // 后备：使用索引
+        else {
+            funcName = "func_" + std::to_string(i);
+        }
+
+        printf("Processing function [%zu]: %s\n", i, funcName.c_str());
 
         // 获取参数数量
         size_t numParams = func->getNumParams();
