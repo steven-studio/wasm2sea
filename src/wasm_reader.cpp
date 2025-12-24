@@ -163,7 +163,8 @@ public:
     }
 };
 
-InstrSeq readWasmFile(const std::string& filename) {
+// 修改返回类型：从 InstrSeq 改为 vector<FunctionResult>
+std::vector<FunctionResult> readWasmFile(const std::string& filename) {
     // 讀取檔案
     std::ifstream file(filename, std::ios::binary);
     if (!file) {
@@ -203,47 +204,61 @@ InstrSeq readWasmFile(const std::string& filename) {
         return {};
     }
     
-    Function* func = module.functions[0].get();
+    // 存储所有函数的转换结果
+    std::vector<FunctionResult> results;
 
-    if (!func) {
-        fprintf(stderr, "Error: Function pointer is null\n");
-        return {};
+    for (size_t i = 0; i < module.functions.size(); i++) {
+        if (!module.functions[i]) {
+            fprintf(stderr, "Error: Null function at index %zu\n", i);
+            return {};
+        }
+
+        Function* func = module.functions[i].get();
+
+        if (!func) {
+            fprintf(stderr, "Error: Function pointer is null\n");
+            return {};
+        }
+
+        // 获取函数名（这部分你也缺少了）
+        std::string funcName;
+        if (func->name.is()) {
+            // string_view 轉 string
+            funcName = std::string(func->name.str);
+            printf("Processing function: %s\n", funcName.c_str());
+        } else {
+            funcName = "func_" + std::to_string(i);  // ← 给未命名函数一个名字
+            printf("Processing function: %s (unnamed)\n", funcName.c_str());
+        }
+
+        // 获取参数数量
+        size_t numParams = func->getNumParams();
+        printf("Function has %zu parameters\n", numParams);
+        
+        // 使用 walker 轉換
+        WasmToInstrSeqConverter converter;
+        // converter.numParams = numParams;  // ← 删除这行，Visitor 不需要
+        converter.visitExpression(func->body);  // ← 改用 visitExpression
+
+        // 构建返回结果
+        InstrSeq instrSeq;
+        instrSeq.push_back({WasmOp::FuncInfo, (int)numParams});  // 第一条指令存储参数数量
+        instrSeq.insert(instrSeq.end(), 
+                    converter.instructions.begin(), 
+                    converter.instructions.end());
+
+        // ✅ 关键：创建 FunctionResult 并添加到 results
+        FunctionResult funcResult;
+        funcResult.name = funcName;           // ← 保存函数名
+        funcResult.numParams = numParams;     // ← 保存参数数量
+        funcResult.instructions = instrSeq;   // ← 保存指令序列
+        
+        results.push_back(funcResult);        // ← 添加到 results！
+        
+        printf("  Converted %zu instructions\n", instrSeq.size());
     }
-
-    // 安全的方式：先檢查 name 是否有效
-    if (func->name.is()) {
-        // string_view 轉 string
-        std::string funcName(func->name.str);
-        printf("Processing function: %s\n", funcName.c_str());
-    } else {
-        printf("Processing function: <unnamed>\n");
-    }
-
-    // 获取参数数量
-    size_t numParams = func->getNumParams();
-    printf("Function has %zu parameters\n", numParams);
     
-    // 使用 walker 轉換
-    WasmToInstrSeqConverter converter;
-    // converter.numParams = numParams;  // ← 删除这行，Visitor 不需要
-    converter.visitExpression(func->body);  // ← 改用 visitExpression
+    printf("Successfully converted %zu functions\n", results.size());
     
-    // // 添加调试输出：
-    // printf("Debug: Generated instructions:\n");
-    // for (size_t i = 0; i < converter.instructions.size(); i++) {
-    //     printf("  [%zu] op=%d, operand=%d\n", 
-    //         i, (int)converter.instructions[i].op, 
-    //         converter.instructions[i].operand);
-    // }
-
-    // 构建返回结果
-    InstrSeq result;
-    result.push_back({WasmOp::FuncInfo, (int)numParams});  // 第一条指令存储参数数量
-    result.insert(result.end(), 
-                  converter.instructions.begin(), 
-                  converter.instructions.end());
-    
-    printf("Converted %zu instructions\n", result.size());
-    
-    return result;
+    return results;
 }

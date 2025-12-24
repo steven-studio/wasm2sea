@@ -42,54 +42,70 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    InstrSeq code;
+    // ✅ 读取所有函数
+    std::vector<FunctionResult> functions;
 
-    // Step 0: 準備 Wasm 指令序列
-    // (func (param $x i32) (param $y i32) (result i32)
-    //   local.get 0
-    //   local.get 1
-    //   i32.add
-    //   return
-    // )
     if (argc > 1) {
-        code = readWasmFile(argv[1]);
-        if (code.empty()) {
-            std::cerr << "Failed to read WASM file\n";
+        functions = readWasmFile(argv[1]);
+        if (functions.empty()) {
+            std::cerr << "Failed to read WASM file or no functions found\n";
             return 1;
         }
+        
+        std::cout << "Loaded " << functions.size() << " function(s)\n\n";
     } else {
         std::cout << "No input WASM file provided\n";
         return 0;
     }
 
-    // Step 1: Wasm → ValueIR (你的 SSA IR)
-    std::cout << "Step 1: Lowering Wasm to ValueIR\n";
-    std::cout << "================================\n";
+    // ✅ 处理所有函数
+    for (size_t i = 0; i < functions.size(); i++) {
+        const auto& func = functions[i];
 
-    // ===== 添加这里 =====
-    printf("\n");
-    dumpInstrSeq(code);  // 打印 Stage 1 输出
-    printf("\n");
-    // ===================
+        std::cout << "\n" << std::string(70, '=') << "\n";
+        std::cout << "Processing function [" << i << "]: " << func.name << "\n";
+        std::cout << "Parameters: " << func.numParams << "\n";
+        std::cout << std::string(70, '=') << "\n\n";
 
-    ValueIR values = lowerWasmToSsa(code);
-    dumpValueIR(values);
+        InstrSeq code = func.instructions;
 
-    // Step 2: ValueIR → dstogov/ir
-    std::cout << "\nStep 2: Building dstogov/ir Graph\n";
-    std::cout << "==================================\n";
-    IRBridge bridge;
-    IRFunction* fn = bridge.build(values);
+        // Step 1: Wasm → ValueIR (你的 SSA IR)
+        std::cout << "Step 1: Lowering Wasm to ValueIR\n";
+        std::cout << "================================\n";
+
+        // ===== 添加这里 =====
+        printf("\n");
+        dumpInstrSeq(code);  // 打印 Stage 1 输出
+        printf("\n");
+        // ===================
+
+        ValueIR values = lowerWasmToSsa(code);
+        dumpValueIR(values);
+
+        // Step 2: ValueIR → dstogov/ir
+        std::cout << "\nStep 2: Building dstogov/ir Graph\n";
+        std::cout << "==================================\n";
+
+        IRBridge bridge;
+        IRFunction* fn = bridge.build(values);
+        
+        // 印出 dstogov/ir 的 IR graph
+        bridge.dump(fn);
+
+        // 保存每个函数的 IR
+        std::string irPath = func.name + ".ir";
+        bridge.save(irPath.c_str());
+        std::cout << "Saved IR to: " << irPath << "\n";
+
+        // 清理
+        delete fn;
+    }
     
-    // 印出 dstogov/ir 的 IR graph
-    bridge.dump(fn);
-
-    // ★ 核心驗證輸出
-    bridge.save("out.ir");
-
-    // 清理
-    delete fn;
+    // ✅ 移到这里：循环外
+    std::cout << "\n" << std::string(70, '=') << "\n";
+    std::cout << "=== Compilation Complete ===\n";
+    std::cout << "Successfully processed " << functions.size() << " function(s)\n";
+    std::cout << std::string(70, '=') << "\n";
     
-    std::cout << "\n=== Compilation Complete ===\n";
     return 0;
 }
