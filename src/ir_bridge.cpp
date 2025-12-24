@@ -1,3 +1,14 @@
+// ===== 在所有 #include 之后添加这段 =====
+// Enable trace output for debugging and verification
+#define ENABLE_IR_TRACE 1
+
+#if ENABLE_IR_TRACE
+#define TRACE(...) fprintf(stderr, "[IR_TRACE] " __VA_ARGS__)
+#else
+#define TRACE(...) do {} while(0)
+#endif
+// ===== 结束 =====
+
 #include "ir_bridge.hpp"
 #include "value_ir.hpp"
 #include <cstdio>
@@ -40,6 +51,11 @@ IRFunction* IRBridge::build(const ValueIR& values) {
     // 重要：dstogov/ir 的巨集需要變數名為 'ctx'
     ir_ctx* ctx = ctx_;
 
+    // ===== 添加这行 =====
+    TRACE("=== Starting IR Bridge Construction ===\n");
+    TRACE("Total ValueIR entries: %zu\n\n", values.size());
+    // ===== 结束 =====
+
     ir_init(ctx_, IR_FUNCTION, 128, 128);
     
     // 開始建構 IR
@@ -62,11 +78,17 @@ IRFunction* IRBridge::build(const ValueIR& values) {
     }
     
     // 第二遍：按照 paramIndex 顺序创建 IR 参数
+    TRACE("--- Phase 1: Creating Parameters ---\n");
     for (auto& [param_idx, value_id] : param_index_to_value_id) {
         char name[32];
         snprintf(name, sizeof(name), "p%d", param_idx);
         ir_ref param_ref = ir_PARAM(IR_I32, name, param_idx + 1);
         value_map[value_id] = param_ref;
+
+        // ===== 添加这行 =====
+        TRACE("v%d = Param(%d) -> ir_PARAM(\"%s\", %d) [node ref=%d]\n", 
+            value_id, param_idx, name, param_idx + 1, param_ref);
+        // ===== 结束 =====
     }
     
     // 为每个可能的局部变量创建 VAR
@@ -101,13 +123,18 @@ IRFunction* IRBridge::build(const ValueIR& values) {
     for (size_t i = 0; i < values.size(); i++) {
         const Value& val = values[i];
 
+        // ===== 添加这段 =====
+        TRACE("--- Processing v%zu ---\n", i);
+        // ===== 结束 =====
+
         // 跳过已经处理的参数
         if (val.op == Op::Param) {
+            TRACE("  Skipped (already processed)\n\n");
             continue;
         }
                 
         switch (val.op) {
-        
+
         case Op::Add: {
             // 檢查 lhs 和 rhs 是否有效
             if (val.lhs < 0 || val.lhs >= (int)i) {
@@ -122,6 +149,11 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             ir_ref lhs_ref = value_map[val.lhs];
             ir_ref rhs_ref = value_map[val.rhs];
             value_map[i] = ir_ADD_I32(lhs_ref, rhs_ref);
+
+            // ===== 添加这行 =====
+            TRACE("  v%zu = Add(v%d, v%d) -> ir_ADD_I32(ref %d, ref %d) = ref %d\n\n",
+                i, val.lhs, val.rhs, lhs_ref, rhs_ref, value_map[i]);
+            // ===== 结束 =====
             break;
         }
 
@@ -266,15 +298,12 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             
             ir_ref lhs_ref = value_map[val.lhs];
             ir_ref rhs_ref = value_map[val.rhs];
-
-            // 调试输出
-            printf("DEBUG Gt_S: v%d = Gt_S(v%d, v%d)\n", (int)i, val.lhs, val.rhs);
-            printf("  lhs_ref=%d, rhs_ref=%d\n", lhs_ref, rhs_ref);
-
             value_map[i] = ir_GT(lhs_ref, rhs_ref);
 
-            printf("  result_ref=%d\n", value_map[i]);
-
+            // ===== 添加这段 =====
+            TRACE("  v%zu = Gt_S(v%d, v%d) -> ir_GT(ref %d, ref %d) = ref %d\n\n",
+                i, val.lhs, val.rhs, lhs_ref, rhs_ref, value_map[i]);
+            // ===== 结束 =====
             break;
         }
 
@@ -403,11 +432,19 @@ IRFunction* IRBridge::build(const ValueIR& values) {
                 if (local_vars.count(local_idx)) {
                     ir_ref var_ref = local_vars[local_idx];
                     ret_val = ir_VLOAD_I32(var_ref);
+                    // ===== 添加这行 =====
+                    TRACE("  v%zu = Return(v%d) via VLOAD from local_%d\n", 
+                        i, val.lhs, local_idx);
+                    // ===== 结束 =====
                 } else {
                     ret_val = value_map[val.lhs];
                 }
             } else {
                 ret_val = value_map[val.lhs];
+                // ===== 添加这行 =====
+                TRACE("  v%zu = Return(v%d) -> ir_RETURN(ref %d)\n\n",
+                    i, val.lhs, ret_val);
+                // ===== 结束 =====
             }
             
             ir_RETURN(ret_val);
@@ -416,6 +453,11 @@ IRFunction* IRBridge::build(const ValueIR& values) {
         
         case Op::Const: {
             value_map[i] = ir_CONST_I32(val.constValue);
+
+            // ===== 添加这行 =====
+            TRACE("  v%zu = Const(%d) -> ir_CONST_I32(%d) = ref %d\n\n",
+                i, val.constValue, val.constValue, value_map[i]);
+            // ===== 结束 =====
             break;
         }
 
@@ -435,23 +477,36 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             ir_ref true_ref = value_map[true_idx];
             ir_ref false_ref = value_map[false_idx];
             
+            // ===== 添加这段 =====
+            TRACE("  v%zu = Select(cond=v%d, false=v%d, true=v%d)\n", 
+                i, cond_idx, false_idx, true_idx);
+            TRACE("    Expanding to IF/MERGE/PHI pattern:\n");
+            // ===== 结束 =====
+
             // 创建 if 节点
             ir_ref if_node = ir_IF(cond_ref);
-            
+            TRACE("      1. ir_IF(ref %d) = ref %d\n", cond_ref, if_node);
+
             // True 分支
             ir_IF_TRUE(if_node);
             ir_ref end_true = ir_END();
-            
+            TRACE("      2. ir_IF_TRUE -> ir_END() = ref %d\n", end_true);
+
             // False 分支
             ir_IF_FALSE(if_node);
             ir_ref end_false = ir_END();
-            
+            TRACE("      3. ir_IF_FALSE -> ir_END() = ref %d\n", end_false);
+
             // 合并（不要赋值！）
             ir_MERGE_2(end_true, end_false);  // ← 这里不赋值
-            
+            TRACE("      4. ir_MERGE_2(ref %d, ref %d)\n", end_true, end_false);
+
             // 创建 PHI 节点
             ir_ref result = ir_PHI_2(IR_I32, false_ref, true_ref);
-            
+            TRACE("      5. ir_PHI_2(false=ref %d, true=ref %d) = ref %d\n", 
+                    false_ref, true_ref, result);
+            TRACE("    => v%zu maps to ref %d\n\n", i, result);
+
             value_map[i] = result;
             break;
         }

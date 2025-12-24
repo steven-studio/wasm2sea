@@ -39,7 +39,7 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
     };
     std::vector<ControlFrame> control_stack;
 
-    auto printState = [&](const std::string& instrName) {
+    auto printState = [&](const std::string& instrName, const std::string& ssaGenerated = "") {
         fprintf(stderr, "[TRACE] After %s:\n", instrName.c_str());
         
         // 打印 localVars
@@ -62,24 +62,11 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
         }
         fprintf(stderr, "]\n");
         
-        // 打印最新创建的 values
-        if (!values.empty()) {
-            int lastId = values.size() - 1;
-            fprintf(stderr, "  last value: v%d = ", lastId);
-            switch (values[lastId].op) {
-            case Op::Param:
-                fprintf(stderr, "Param(%d)", values[lastId].paramIndex);
-                break;
-            case Op::Const:
-                fprintf(stderr, "Const(%d)", values[lastId].constValue);
-                break;
-            case Op::Add:
-                fprintf(stderr, "Add(v%d, v%d)", values[lastId].lhs, values[lastId].rhs);
-                break;
-            default:
-                fprintf(stderr, "...");
-            }
-            fprintf(stderr, "\n");
+        // 打印 SSA Generated（如果提供了）
+        if (!ssaGenerated.empty()) {
+            fprintf(stderr, "  SSA Generated: %s\n", ssaGenerated.c_str());
+        } else {
+            fprintf(stderr, "  SSA Generated: -\n");
         }
         fprintf(stderr, "\n");
     };
@@ -109,6 +96,10 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             frame.cond_id = cond;
             frame.stack_size = stack.size();
             control_stack.push_back(frame);
+    
+            char buf[100];
+            sprintf(buf, "v%d = If(v%d)", if_id, cond);
+            printState("If", buf);
             break;
         }
 
@@ -124,6 +115,10 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             
             // 创建 Else 节点
             int else_id = newValue(Op::Else);
+    
+            char buf[100];
+            sprintf(buf, "v%d = Else", else_id);
+            printState("Else", buf);
             break;
         }
 
@@ -151,6 +146,9 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
                 }
                 
                 int end_id = newValue(Op::End);
+                char buf[100];
+                sprintf(buf, "v%d = End", end_id);
+                printState("End", buf);
             } else {
 
                 // 记录 else 分支的结果（如果有）
@@ -162,7 +160,10 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
                 
                 // 创建 End 节点并生成 Select/Phi
                 int end_id = newValue(Op::End);
-                
+
+                std::string ssaGen;
+                char buf[200];
+
                 // 如果 then 和 else 都有返回值，创建一个选择
                 if (!frame.then_values.empty() && !frame.else_values.empty()) {
                     int select_id = newValue(Op::Select);
@@ -172,13 +173,23 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
                         frame.then_values[0]    // ← 交换：then 在后
                     };
                     stack.push_back(select_id);
+                                
+                    sprintf(buf, "v%d = End, v%d = Select(v%d, v%d, v%d)", 
+                            end_id, select_id, frame.cond_id, 
+                            frame.else_values[0], frame.then_values[0]);
                 } else if (!frame.then_values.empty()) {
                     // 只有 then 分支有值
                     stack.push_back(frame.then_values[0]);
+                    sprintf(buf, "v%d = End", end_id);
                 } else if (!frame.else_values.empty()) {
                     // 只有 else 分支有值
                     stack.push_back(frame.else_values[0]);
+                    sprintf(buf, "v%d = End", end_id);
+                } else {
+                    sprintf(buf, "v%d = End", end_id);
                 }
+
+                printState("End", buf);
             }
             break;
         }
@@ -189,7 +200,11 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             if (it != localVars.end()) {
                 // 已经被赋值过，使用当前值
                 stack.push_back(it->second);
-                printState("LocalGet(" + std::to_string(ins.operand) + ") - use existing");
+                // 传入 "-" 表示没有创建新的 SSA
+                printState(
+                    "LocalGet(" + std::to_string(ins.operand) + ")", 
+                    "-"  // ← 关键：没有创建新 SSA
+                );
             } else {
                 // 第一次访问
                 if (ins.operand < (int)numParams) {
@@ -198,14 +213,27 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
                     values[id].paramIndex = ins.operand;
                     localVars[ins.operand] = id;
                     stack.push_back(id);
-                    printState("LocalGet(" + std::to_string(ins.operand) + ") - create Param");
+            
+                    // 传入创建的 SSA
+                    char buf[100];
+                    sprintf(buf, "v%d = Param(%d)", id, ins.operand);
+                    printState(
+                        "LocalGet(" + std::to_string(ins.operand) + ")", 
+                        buf  // ← 显示创建的 SSA
+                    );
                 } else {
                     // 是未初始化的局部变量，默认为 0
                     int id = newValue(Op::Const);
                     values[id].constValue = 0;
                     localVars[ins.operand] = id;
                     stack.push_back(id);
-                    printState("LocalGet(" + std::to_string(ins.operand) + ") - create Const(0)");
+            
+                    char buf[100];
+                    sprintf(buf, "v%d = Const(0)", id);
+                    printState(
+                        "LocalGet(" + std::to_string(ins.operand) + ")", 
+                        buf
+                    );
                 }
             }
             break;
@@ -216,7 +244,11 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
                 int val = stack.back();
                 stack.pop_back();
                 localVars[ins.operand] = val;
-                printState("LocalSet(" + std::to_string(ins.operand) + ")");
+        
+                printState(
+                    "LocalSet(" + std::to_string(ins.operand) + ")", 
+                    "-"  // LocalSet 不创建新 SSA
+                );
             }
             break;
         }
@@ -342,6 +374,10 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             values[id].lhs = lhs;
             values[id].rhs = rhs;
             stack.push_back(id);
+    
+            char buf[100];
+            sprintf(buf, "v%d = Gt_S(v%d, v%d)", id, lhs, rhs);
+            printState("I32GtS", buf);
             break;
         }
 
