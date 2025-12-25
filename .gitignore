@@ -4,6 +4,11 @@ build/
 *.a
 *.so
 *.dylib
+tests/*.c
+tests/*.ir
+tests/*.wasm
+tests/*_wrapper.c
+tests/*_test
 
 # IDE
 .vscode/
