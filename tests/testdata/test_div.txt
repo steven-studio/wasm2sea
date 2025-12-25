@@ -1,0 +1,71 @@
+# Test cases for test_div: i32.div_s (signed division)
+# Format: a b expected (result = a / b, truncated toward zero)
+# Note: No division by zero cases (would cause trap)
+
+# 1. Division by 1 and -1 (5 cases)
+10 1 10
+-10 1 -10
+10 -1 -10
+-10 -1 10
+0 1 0
+
+# 2. Basic Division (5 cases)
+10 5 2
+20 4 5
+100 10 10
+1000 100 10
+15 3 5
+
+# 3. Positive / Positive (5 cases)
+8 2 4
+50 5 10
+99 9 11
+144 12 12
+200 25 8
+
+# 4. Negative / Positive (5 cases)
+-10 5 -2
+-20 4 -5
+-100 10 -10
+-50 5 -10
+-99 9 -11
+
+# 5. Positive / Negative (5 cases)
+10 -5 -2
+20 -4 -5
+100 -10 -10
+50 -5 -10
+99 -9 -11
+
+# 6. Negative / Negative (5 cases)
+-10 -5 2
+-20 -4 5
+-100 -10 10
+-50 -5 10
+-99 -9 11
+
+# 7. Truncation Toward Zero (10 cases)
+7 3 2
+-7 3 -2
+7 -3 -2
+-7 -3 2
+10 3 3
+-10 3 -3
+10 -3 -3
+-10 -3 3
+5 2 2
+-5 2 -2
+
+# 8. Boundary Values (5 cases)
+2147483647 1 2147483647
+-2147483648 1 -2147483648
+2147483647 2147483647 1
+-2147483648 -2147483648 1
+2147483646 2 1073741823
+
+# 9. Random Values (5 cases)
+12345 67 184
+-54321 123 -441
+98765 234 422
+-87654 -321 273
+11111 37 300
