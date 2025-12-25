@@ -1,0 +1,67 @@
+# Test cases for test_clamp: clamp(value, min, max)
+# Format: value min max expected
+# Returns: min if value < min, max if value > max, else value
+
+# 1. Value within range (10 cases)
+5 0 10 5
+0 0 10 0
+10 0 10 10
+3 0 10 3
+7 0 10 7
+-5 -10 10 -5
+-3 -10 10 -3
+50 0 100 50
+25 0 100 25
+75 0 100 75
+
+# 2. Value below min (clamped to min) (10 cases)
+-5 0 10 0
+-100 0 10 0
+-1 0 10 0
+-50 -10 10 -10
+-20 -10 10 -10
+-100 -50 50 -50
+-60 -50 50 -50
+-1000 0 100 0
+-5 1 10 1
+-10 -5 5 -5
+
+# 3. Value above max (clamped to max) (10 cases)
+15 0 10 10
+100 0 10 10
+11 0 10 10
+20 -10 10 10
+50 -10 10 10
+100 -50 50 50
+60 -50 50 50
+1000 0 100 100
+15 1 10 10
+10 -5 5 5
+
+# 4. Value equals min (5 cases)
+0 0 10 0
+-10 -10 10 -10
+1 1 10 1
+-50 -50 50 -50
+-100 -100 100 -100
+
+# 5. Value equals max (5 cases)
+10 0 10 10
+10 -10 10 10
+10 1 10 10
+50 -50 50 50
+100 -100 100 100
+
+# 6. Negative ranges (5 cases)
+-5 -10 -1 -5
+-15 -10 -1 -10
+0 -10 -1 -1
+-3 -10 -1 -3
+-7 -10 -1 -7
+
+# 7. Edge cases (5 cases)
+0 0 0 0
+5 5 5 5
+-5 -5 -5 -5
+100 50 150 100
+-100 -150 -50 -100
