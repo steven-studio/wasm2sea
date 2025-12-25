@@ -1,3 +1,5 @@
-( func ( param $x i32) ( result i32)
- (i32.add ( local.get $x) (i32.const 1))
+(module
+  (func (export "main") (param $a i32) (param $b i32) (result i32)
+    (i32.add (local.get $a) (local.get $b))
+  )
 )
