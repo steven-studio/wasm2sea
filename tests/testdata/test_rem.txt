@@ -1,0 +1,74 @@
+# Test cases for test_rem: i32.rem_s (signed remainder)
+# Format: a b expected (result = a % b, sign follows dividend)
+# Note: Result sign matches the dividend (first operand)
+# Formula: a % b = a - (a / b) * b
+
+# 1. Remainder with 1 (always 0) (5 cases)
+10 1 0
+-10 1 0
+100 1 0
+-100 1 0
+0 1 0
+
+# 2. Basic Positive % Positive (5 cases)
+10 3 1
+11 3 2
+12 3 0
+13 3 1
+14 3 2
+
+# 3. Negative % Positive (sign follows dividend) (5 cases)
+-10 3 -1
+-11 3 -2
+-12 3 0
+-13 3 -1
+-14 3 -2
+
+# 4. Positive % Negative (sign follows dividend) (5 cases)
+10 -3 1
+11 -3 2
+12 -3 0
+13 -3 1
+14 -3 2
+
+# 5. Negative % Negative (sign follows dividend) (5 cases)
+-10 -3 -1
+-11 -3 -2
+-12 -3 0
+-13 -3 -1
+-14 -3 -2
+
+# 6. Zero Dividend (5 cases)
+0 5 0
+0 -5 0
+0 100 0
+0 -100 0
+0 7 0
+
+# 7. Larger Modulus (remainder equals dividend) (5 cases)
+5 10 5
+-5 10 -5
+5 -10 5
+-5 -10 -5
+3 100 3
+
+# 8. Powers of 2 (5 cases)
+15 4 3
+-15 4 -3
+17 8 1
+-17 8 -1
+33 16 1
+
+# 9. Equal Values (remainder is 0) (5 cases)
+5 5 0
+-5 5 0
+5 -5 0
+-5 -5 0
+100 100 0
+
+# 10. Random Values (5 cases)
+123 10 3
+-456 7 -1
+789 12 9
+-234 15 -9
+567 23 15
