@@ -1,0 +1,64 @@
+# Test cases for test_abs: abs(a)
+# Format: a dummy expected (result = |a|)
+# Note: dummy parameter is ignored (used for framework compatibility)
+# Special case: abs(INT32_MIN) overflows to INT32_MIN
+
+# 1. Positive Numbers (remain unchanged) (10 cases)
+1 0 1
+5 0 5
+10 0 10
+100 0 100
+1000 0 1000
+12345 0 12345
+50 0 50
+75 0 75
+200 0 200
+500 0 500
+
+# 2. Negative Numbers (negate to positive) (10 cases)
+-1 0 1
+-5 0 5
+-10 0 10
+-100 0 100
+-1000 0 1000
+-12345 0 12345
+-50 0 50
+-75 0 75
+-200 0 200
+-500 0 500
+
+# 3. Zero (5 cases)
+0 0 0
+0 1 0
+0 -1 0
+0 100 0
+0 -100 0
+
+# 4. Boundary Values (10 cases)
+2147483647 0 2147483647
+-2147483647 0 2147483647
+2147483646 0 2147483646
+-2147483646 0 2147483646
+1 0 1
+-1 0 1
+-2147483648 0 -2147483648
+2147483647 1 2147483647
+-2147483647 -1 2147483647
+1000000 0 1000000
+
+# 5. Random Values (15 cases)
+123 0 123
+-456 0 456
+789 0 789
+-234 0 234
+567 0 567
+-890 0 890
+111 0 111
+-222 0 222
+333 0 333
+-444 0 444
+555 0 555
+-666 0 666
+777 0 777
+-888 0 888
+999 0 999
