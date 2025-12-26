@@ -279,7 +279,12 @@ tests=(
     "test_locals_08:1"
     "test_locals_09:2"
     "test_locals_10:1"
-    "test_bitwise:2"
+    "test_bitwise_01:2"
+    "test_bitwise_02:2"
+    "test_bitwise_03:2"
+    "test_bitwise_04:2"
+    "test_bitwise_05:2"
+    "test_bitwise_06:2"
     "test_compare:2"
     "test_arith:3"
 )
