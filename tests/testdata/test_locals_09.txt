@@ -1,0 +1,5 @@
+# Swap: returns second parameter (b)
+5 10 10
+100 200 200
+0 42 42
+-5 7 7

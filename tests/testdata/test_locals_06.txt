@@ -1,0 +1,4 @@
+# Sparse locals: only uses local index 6, returns 99 (input ignored)
+0 99
+1 99
+-1 99

@@ -1,0 +1,4 @@
+# LocalTee: result = 5 + 5 = 10 (input ignored)
+0 10
+42 10
+-7 10

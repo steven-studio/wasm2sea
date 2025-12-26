@@ -1,0 +1,4 @@
+# Multiple locals: result = 10 + 20 = 30 (input ignored)
+0 30
+100 30
+-5 30
