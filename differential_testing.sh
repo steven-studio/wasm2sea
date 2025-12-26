@@ -200,7 +200,10 @@ EOF
         [ -z "$line" ] && continue
         
         # 解析测试用例
-        if [ "$num_params" -eq 2 ]; then
+        if [ "$num_params" -eq 1 ]; then
+            read -r arg1 expected <<< "$line"
+            args="$arg1"
+        elif [ "$num_params" -eq 2 ]; then
             read -r arg1 arg2 expected <<< "$line"
             args="$arg1 $arg2"
         elif [ "$num_params" -eq 3 ]; then
@@ -263,10 +266,19 @@ tests=(
     "test_div:2"
     "test_rem:2"
     "test_max:2"
-    "test_abs:2"  # 这个应该是1个参数，但为了简化先用2
+    "test_abs:2"
     "test_min:2"
     "test_clamp:3"
-    "test_locals:2"
+    "test_locals_01:1"
+    "test_locals_02:1"
+    "test_locals_03:1"
+    "test_locals_04:1"
+    "test_locals_05:1"
+    "test_locals_06:1"
+    "test_locals_07:1"
+    "test_locals_08:1"
+    "test_locals_09:2"
+    "test_locals_10:1"
     "test_bitwise:2"
     "test_compare:2"
     "test_arith:3"
