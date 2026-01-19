@@ -502,9 +502,9 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             TRACE("      4. ir_MERGE_2(ref %d, ref %d)\n", end_true, end_false);
 
             // 创建 PHI 节点
-            ir_ref result = ir_PHI_2(IR_I32, false_ref, true_ref);
-            TRACE("      5. ir_PHI_2(false=ref %d, true=ref %d) = ref %d\n", 
-                    false_ref, true_ref, result);
+            ir_ref result = ir_PHI_2(IR_I32, true_ref, false_ref);
+            TRACE("      5. ir_PHI_2(true=ref %d, false=ref %d) = ref %d\n", 
+                    true_ref, false_ref, result);
             TRACE("    => v%zu maps to ref %d\n\n", i, result);
 
             value_map[i] = result;

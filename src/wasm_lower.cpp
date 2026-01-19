@@ -1,5 +1,6 @@
 #include "wasm_lower.hpp"
 #include <unordered_map>
+#include <functional>
 
 ValueIR lowerWasmToSsa(const InstrSeq& code) {
     ValueIR values;
@@ -36,6 +37,9 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
         // Loop 专用
         int loop_start_id;                        // 循环开始的 value id
         std::unordered_map<int, int> loop_phis;   // local_index -> phi_value_id
+        
+        // ✅ 新增：If 专用 - 保存 if 开始时的局部变量
+        std::unordered_map<int, int> entry_locals;  // if 入口時的局部變量
     };
     std::vector<ControlFrame> control_stack;
 
@@ -92,9 +96,14 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             
             // 记录控制流信息
             ControlFrame frame;
+            frame.type = ControlFrame::If;  // ✅ 設置類型
             frame.if_id = if_id;
             frame.cond_id = cond;
             frame.stack_size = stack.size();
+
+            // ✅ 保存 if 開始時的 localVars
+            frame.entry_locals = localVars;
+
             control_stack.push_back(frame);
     
             char buf[100];
@@ -129,27 +138,31 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             control_stack.pop_back();
             
             if (frame.type == ControlFrame::Loop) {
-                // 循环结束 - 恢复 localVars
-                for (auto& [idx, val_id] : frame.loop_phis) {
-                    // 检查是否是 Phi 节点
-                    if (val_id < (int)values.size() && values[val_id].op == Op::Phi) {
-                        // 如果 phi 只有一个输入，退化为单值
-                        if (values[val_id].operands.size() == 1) {
-                            localVars[idx] = values[val_id].operands[0];
-                        } else {
-                            localVars[idx] = val_id;
-                        }
-                    } else {
-                        // 不是 Phi，直接使用
-                        localVars[idx] = val_id;
-                    }
-                }
+                // ✅ 修復：不要恢復 localVars！
+                // 循環體內的更新（LocalSet/LocalTee）已經正確維護了 localVars
+                // 循環結束後應該使用最新的值，不是 Phi 節點
                 
+                // 只需創建 End 節點
                 int end_id = newValue(Op::End);
                 char buf[100];
                 sprintf(buf, "v%d = End", end_id);
                 printState("End", buf);
             } else {
+                // ✅ If/Else 處理：合併局部變量
+                
+                // 1. 對於每個在 if 內被修改的局部變量，創建 Phi
+                for (auto& [idx, entry_val] : frame.entry_locals) {
+                    if (localVars.count(idx) && localVars[idx] != entry_val) {
+                        // 這個變量在 if 內被修改了
+                        int select_id = newValue(Op::Select);  // ✅ 使用 Select
+                        values[select_id].operands = {
+                            frame.cond_id,      // 條件
+                            localVars[idx],     // if 為真時的值（then 分支）
+                            entry_val           // if 為假時的值（entry）
+                        };
+                        localVars[idx] = select_id;
+                    }
+                }
 
                 // 记录 else 分支的结果（如果有）
                 if (stack.size() > frame.stack_size) {
@@ -160,8 +173,6 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
                 
                 // 创建 End 节点并生成 Select/Phi
                 int end_id = newValue(Op::End);
-
-                std::string ssaGen;
                 char buf[200];
 
                 // 如果 then 和 else 都有返回值，创建一个选择
@@ -169,14 +180,14 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
                     int select_id = newValue(Op::Select);
                     values[select_id].operands = {
                         frame.cond_id,
-                        frame.else_values[0],   // ← 交换：else 在前
-                        frame.then_values[0]    // ← 交换：then 在后
+                        frame.then_values[0],   // ← 交换：else 在前
+                        frame.else_values[0]    // ← 交换：then 在后
                     };
                     stack.push_back(select_id);
                                 
                     sprintf(buf, "v%d = End, v%d = Select(v%d, v%d, v%d)", 
                             end_id, select_id, frame.cond_id, 
-                            frame.else_values[0], frame.then_values[0]);
+                            frame.then_values[0], frame.else_values[0]);
                 } else if (!frame.then_values.empty()) {
                     // 只有 then 分支有值
                     stack.push_back(frame.then_values[0]);
@@ -290,6 +301,10 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             values[id].lhs = lhs;
             values[id].rhs = rhs;
             stack.push_back(id);
+
+            char buf[100];  // ✅ 加上這三行
+            sprintf(buf, "v%d = Sub(v%d, v%d)", id, lhs, rhs);
+            printState("I32Sub", buf);
             break;
         }
         case WasmOp::I32Mul: {
@@ -475,6 +490,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             // 创建 Loop 节点
             int loop_id = newValue(Op::Loop);
             
+            fprintf(stderr, "[LOOP START] v%d = Loop\n", loop_id);  // ✅ 添加
+
             ControlFrame frame;
             frame.type = ControlFrame::Loop;
             frame.loop_start_id = loop_id;
@@ -487,6 +504,9 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
                 values[phi_id].operands.push_back(val);
                 values[phi_id].local_index = idx;  // ← 记录局部变量索引
                 
+                fprintf(stderr, "  [PHI CREATE] v%d = Phi(v%d) for local_%d\n",   // ✅ 添加
+                        phi_id, val, idx);
+
                 frame.loop_phis[idx] = phi_id;
                 localVars[idx] = phi_id;
             }
@@ -506,6 +526,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             ControlFrame& target = control_stack[control_stack.size() - 1 - depth];
             
             if (target.type == ControlFrame::Loop) {
+                fprintf(stderr, "[BR_IF] Updating Phi backedges:\n");  // ← 你沒加這些！
+
                 // 更新 Phi 的回边
                 for (auto& [idx, phi_id] : target.loop_phis) {
                     if (localVars.count(idx)) {
@@ -513,11 +535,18 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
                         // 只有当前值不是 Phi 自己时才添加回边
                         if (current_val != phi_id) {  // ← 关键检查
                             values[phi_id].operands.push_back(current_val);
+
+                            fprintf(stderr, "  local_%d: v%d += backedge(v%d) -> Phi(v%d, v%d)\n",
+                                    idx, phi_id, current_val, 
+                                    values[phi_id].operands[0], current_val);                            
+                        } else {
+                            fprintf(stderr, "  local_%d: v%d SKIP (not modified, stays Phi(v%d))\n",
+                                    idx, phi_id, values[phi_id].operands[0]);
                         }
-                        // 如果相等，说明这个变量没有被修改，Phi 退化为单值
                     }
                 }
-                
+                fprintf(stderr, "\n");
+
                 int br_if_id = newValue(Op::Br_if);
                 values[br_if_id].lhs = cond;
                 values[br_if_id].rhs = target.loop_start_id;
@@ -542,5 +571,107 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
         values[id].lhs = v;
     }
 
-    return values;
+    // ===== 新增：清理退化的 Phi 節點 + DCE =====
+    fprintf(stderr, "\n=== Cleanup Phase ===\n");
+    
+    // Step 1: 找出退化的 Phi 並建立替換表
+    std::unordered_map<int, int> replacements;
+    for (size_t i = 0; i < values.size(); i++) {
+        if (values[i].op == Op::Phi && values[i].operands.size() == 1) {
+            replacements[i] = values[i].operands[0];
+            fprintf(stderr, "[DEGENERATE] v%d = Phi(v%d) -> will replace with v%d\n",
+                    (int)i, values[i].operands[0], values[i].operands[0]);
+        }
+    }
+    
+    // Step 2: 遞歸解析替換鏈
+    std::function<int(int)> resolve = [&](int id) -> int {
+        auto it = replacements.find(id);
+        return (it != replacements.end()) ? resolve(it->second) : id;
+    };
+    
+    // Step 3: 應用替換到所有節點
+    for (auto& v : values) {
+        if (v.lhs != -1) v.lhs = resolve(v.lhs);
+        if (v.rhs != -1) v.rhs = resolve(v.rhs);
+        for (auto& op : v.operands) {
+            op = resolve(op);
+        }
+    }
+    
+    // Step 4: 標記所有被使用的節點
+    std::vector<bool> used(values.size(), false);
+
+    // ✅ 修正：控制流節點和 Return 節點都要保留
+    for (size_t i = 0; i < values.size(); i++) {
+        if (values[i].op == Op::Return ||
+            values[i].op == Op::Loop ||
+            values[i].op == Op::If ||
+            values[i].op == Op::Else ||
+            values[i].op == Op::End ||
+            values[i].op == Op::Br_if) {
+            used[i] = true;
+        }
+    }
+
+    // 遞歸標記所有依賴
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (size_t i = 0; i < values.size(); i++) {
+            if (!used[i]) continue;
+            
+            // 標記這個節點的所有操作數
+            if (values[i].lhs != -1 && !used[values[i].lhs]) {
+                used[values[i].lhs] = true;
+                changed = true;
+            }
+            if (values[i].rhs != -1 && !used[values[i].rhs]) {
+                used[values[i].rhs] = true;
+                changed = true;
+            }
+            for (int op : values[i].operands) {
+                if (!used[op]) {
+                    used[op] = true;
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    // Step 5: 建立新的 ID 映射 (old_id -> new_id)
+    std::vector<int> id_map(values.size(), -1);
+    int new_id = 0;
+    for (size_t i = 0; i < values.size(); i++) {
+        if (used[i]) {
+            id_map[i] = new_id++;
+        } else {
+            fprintf(stderr, "[DEAD] v%d removed (not used)\n", (int)i);
+        }
+    }
+
+    // Step 6: 重建 values 陣列
+    ValueIR new_values;
+    new_values.reserve(new_id);
+
+    for (size_t i = 0; i < values.size(); i++) {
+        if (!used[i]) continue;
+        
+        Value v = values[i];
+        v.id = id_map[i];
+        
+        // 更新所有引用的 ID
+        if (v.lhs != -1) v.lhs = id_map[v.lhs];
+        if (v.rhs != -1) v.rhs = id_map[v.rhs];
+        for (auto& op : v.operands) {
+            op = id_map[op];
+        }
+        
+        new_values.push_back(v);
+    }
+
+    fprintf(stderr, "[CLEANUP] Original: %zu nodes, After cleanup: %zu nodes\n\n",
+            values.size(), new_values.size());
+
+    return new_values;  // ← 返回清理後的陣列
 }

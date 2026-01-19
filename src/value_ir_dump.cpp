@@ -60,7 +60,7 @@ void dumpValueIR(const ValueIR& values) {
             }
             break;
         case Op::Phi:
-            std::cout << "Phi(";
+            std::cout << "(";
             if (!v.operands.empty()) {
                 for (size_t i = 0; i < v.operands.size(); i++) {
                     if (i > 0) std::cout << ", ";
@@ -70,7 +70,7 @@ void dumpValueIR(const ValueIR& values) {
             std::cout << ")";
             break;
         case Op::Br_if:
-            std::cout << "Br_if(cond: v" << v.lhs 
+            std::cout << "(cond: v" << v.lhs 
                     << ", target: v" << v.rhs << ")";
             break;
         case Op::Return:
