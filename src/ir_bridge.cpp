@@ -27,7 +27,9 @@ extern "C" {
 
 // 在 build() 函数中添加循环信息追踪
 struct LoopInfo {
+    ir_ref loop_begin;           // ← 改名：LOOP_BEGIN 節點
     ir_ref entry_point;  // 循环入口的控制流节点
+    std::vector<int> phi_ids;    // ← 新增：記錄這個循環的 Phi 節點
 };
 std::stack<LoopInfo> loop_stack;
 
@@ -94,10 +96,10 @@ IRFunction* IRBridge::build(const ValueIR& values) {
     // 为每个可能的局部变量创建 VAR
     std::set<int> local_indices;
     for (const auto& v : values) {
-        if (v.op == Op::Param || v.op == Op::LocalGet || 
-            v.op == Op::LocalSet || v.op == Op::LocalTee) {
-            local_indices.insert(v.paramIndex);
-        }
+        // if (v.op == Op::Param || v.op == Op::LocalGet || 
+        //     v.op == Op::LocalSet || v.op == Op::LocalTee) {
+        //     local_indices.insert(v.paramIndex);
+        // }
         // 从 Phi 节点收集局部变量索引
         if (v.op == Op::Phi && v.local_index >= 0) {
             local_indices.insert(v.local_index);
@@ -420,32 +422,13 @@ IRFunction* IRBridge::build(const ValueIR& values) {
         }
         
         case Op::Return: {            
-            // 从 VAR 加载最终值并返回
             if (val.lhs < 0 || val.lhs >= (int)i) break;
             
-            const Value& ret_val_src = values[val.lhs];
-            ir_ref ret_val;
+            // ✅ 直接从 value_map 获取返回值（可能是 PHI）
+            ir_ref ret_val = value_map[val.lhs];
             
-            if (ret_val_src.op == Op::Phi && ret_val_src.local_index >= 0) {
-                // 直接从 VAR 加载
-                int local_idx = ret_val_src.local_index;
-                if (local_vars.count(local_idx)) {
-                    ir_ref var_ref = local_vars[local_idx];
-                    ret_val = ir_VLOAD_I32(var_ref);
-                    // ===== 添加这行 =====
-                    TRACE("  v%zu = Return(v%d) via VLOAD from local_%d\n", 
-                        i, val.lhs, local_idx);
-                    // ===== 结束 =====
-                } else {
-                    ret_val = value_map[val.lhs];
-                }
-            } else {
-                ret_val = value_map[val.lhs];
-                // ===== 添加这行 =====
-                TRACE("  v%zu = Return(v%d) -> ir_RETURN(ref %d)\n\n",
-                    i, val.lhs, ret_val);
-                // ===== 结束 =====
-            }
+            TRACE("  v%zu = Return(v%d) -> ir_RETURN(ref %d)\n\n",
+                i, val.lhs, ret_val);
             
             ir_RETURN(ret_val);
             break;
@@ -521,70 +504,119 @@ IRFunction* IRBridge::build(const ValueIR& values) {
         }
 
         case Op::Loop: {
-            // 创建循环入口
-            ir_ref loop_entry = ir_END();
-            ctx_->control = loop_entry;
+
+            TRACE("  v%zu = Loop - Creating LOOP_BEGIN\n", i);
+            
+            // 創建 LOOP_BEGIN 節點
+            ir_ref loop_begin = ir_LOOP_BEGIN(ir_END());
+            ctx_->control = loop_begin;  // ← 關鍵：設置當前控制流
+            
+            TRACE("    ir_LOOP_BEGIN = ref %d\n", loop_begin);
             
             LoopInfo info;
-            info.entry_point = loop_entry;
+            info.loop_begin = loop_begin;
+            info.entry_point = loop_begin;
             loop_stack.push(info);
-            value_map[i] = loop_entry;
+            
+            value_map[i] = loop_begin;
+            TRACE("    Pushed to loop_stack\n\n");
             break;
         }
 
         case Op::Phi: {
-            // Phi 直接从 VAR 加载
-            int local_idx = val.local_index;
-            if (local_vars.count(local_idx)) {
-                ir_ref var_ref = local_vars[local_idx];
+            TRACE("  v%zu = Phi\n", i);
+            
+            // ===== 添加：打印 operands =====
+            TRACE("    Phi operands: [");
+            for (size_t j = 0; j < val.operands.size(); j++) {
+                TRACE("v%d", val.operands[j]);
+                if (j < val.operands.size() - 1) TRACE(", ");
+            }
+            TRACE("]\n");
+            // ===== 结束 =====
+            
+            // ✅ 直接创建 PHI
+            if (!val.operands.empty()) {
+                int op0 = val.operands[0];
+                TRACE("    Phi op0 value-id = %d\n", op0);
+                TRACE("    value_map[op0]   = %d\n", value_map[op0]);
 
-                // ✅ 先存储 Phi 的初始值（operands[0]）
-                if (!val.operands.empty()) {
-                    int init_val_id = val.operands[0];
-                    if (value_map[init_val_id] != IR_UNUSED) {
-                        ir_VSTORE(var_ref, value_map[init_val_id]);
-                    }
+                if (value_map[op0] == IR_UNUSED) {
+                    TRACE("    ERROR: Phi entry is IR_UNUSED (op0=%d)\n", op0);
                 }
 
-                ir_ref loaded = ir_VLOAD_I32(var_ref);
-                value_map[i] = loaded;
+                ir_ref entry_val = value_map[val.operands[0]];
+                ir_ref phi = ir_PHI_2(IR_I32, entry_val, IR_UNUSED);
+                value_map[i] = phi;
+                
+                // ===== 添加：打印创建结果 =====
+                TRACE("    Created PHI = ref %d (entry=ref %d, backedge=UNUSED)\n", 
+                    phi, entry_val);
+                TRACE("    local_index = %d\n", val.local_index);
+                // ===== 结束 =====
+                
+                if (!loop_stack.empty()) {
+                    loop_stack.top().phi_ids.push_back(i);
+                    TRACE("    Added to loop_stack.phi_ids\n");
+                }
             }
+            
+            TRACE("\n");
             break;
         }
 
         case Op::Br_if: {
-            ir_ref cond_ref = value_map[val.lhs];
+            if (val.lhs < 0 || val.lhs >= (int)i) break;
             
-            if (!loop_stack.empty()) {
-                LoopInfo& loop_info = loop_stack.top();
-                
-                // 更新循环变量
-                for (size_t j = 0; j < i; j++) {
-                    if (values[j].op == Op::Phi && values[j].operands.size() >= 2) {
-                        int local_idx = values[j].local_index;
-                        int updated_val_id = values[j].operands[1];
-                        
-                        if (local_vars.count(local_idx) && value_map[updated_val_id] != IR_UNUSED) {
-                            ir_VSTORE(local_vars[local_idx], value_map[updated_val_id]);
-                        }
-                    }
-                }
-                
-                // 在 IF 之前添加 END
-                ir_ref end_ref = ir_END();
-                ctx_->control = end_ref;  // ← 关键：设置控制流！
-
-                // 创建条件分支
-                ir_ref if_node = ir_IF(cond_ref);
-                
-                // 条件为真：回到循环开始
-                ir_IF_TRUE(if_node);
-                ir_MERGE_WITH(loop_info.entry_point);
-                
-                // 条件为假：退出循环
-                ir_IF_FALSE(if_node);
-                // 不调用 END，让控制流继续
+            ir_ref cond_ref = value_map[val.lhs];
+            TRACE("  v%zu = Br_if(cond=v%d)\n", i, val.lhs);
+            
+            if (loop_stack.empty()) {
+                TRACE("    ERROR: Br_if without active loop!\n\n");
+                break;
             }
+            
+            LoopInfo& loop_info = loop_stack.top();
+            
+            // 1. 更新所有循環變量（存儲 backedge 值）
+            TRACE("    Updating loop variables:\n");
+            for (int phi_id : loop_info.phi_ids) {
+                const Value& phi_val = values[phi_id];
+                if (phi_val.operands.size() >= 2) {
+                    int entry_val_id = phi_val.operands[0];     // 入口值
+                    int backedge_val_id = phi_val.operands[1];  // 回边值
+                    
+                    ir_ref phi_ref = value_map[phi_id];
+                    ir_ref entry_ref = value_map[entry_val_id];
+                    ir_ref backedge_ref = value_map[backedge_val_id];
+                    
+                    // ✅ 显式设置两个操作数
+                    // ir_set_op(ctx_, phi_ref, 1, entry_ref);     // 第一个操作数
+                    ir_PHI_SET_OP(phi_ref, 2, backedge_ref);  // 第二个操作数
+                    
+                    TRACE("      PHI ref %d: op1=ref %d, op2=ref %d\n", 
+                        phi_ref, entry_ref, backedge_ref);
+                }
+            }
+            
+            // 3. 創建條件分支
+            ir_ref if_node = ir_IF(cond_ref);
+            TRACE("    ir_IF(ref %d) = ref %d\n", cond_ref, if_node);
+            
+            // 4. True 分支：回跳到 LOOP_BEGIN
+            ir_IF_TRUE(if_node);
+            ir_ref loop_end_ref = ir_LOOP_END();
+            TRACE("    ir_LOOP_END = ref %d\n", loop_end_ref);
+            
+            // 4. ✅ 回填 LOOP_BEGIN 的第二個輸入（創建回邊）
+            ir_MERGE_SET_OP(loop_info.loop_begin, 2, loop_end_ref);
+            TRACE("    ir_MERGE_SET_OP(LOOP_BEGIN ref %d, 2, LOOP_END ref %d)\n",
+                loop_info.loop_begin, loop_end_ref);
+            
+            // 5. False 分支：退出循環
+            ir_IF_FALSE(if_node);
+            TRACE("    ir_IF_FALSE -> (exit loop)\n\n");
+            
             break;
         }
 

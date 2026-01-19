@@ -138,9 +138,10 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             control_stack.pop_back();
             
             if (frame.type == ControlFrame::Loop) {
-                // ✅ 修復：不要恢復 localVars！
-                // 循環體內的更新（LocalSet/LocalTee）已經正確維護了 localVars
-                // 循環結束後應該使用最新的值，不是 Phi 節點
+                // ✅ 恢復 localVars 為 Phi 節點
+                // for (auto& [idx, phi_id] : frame.loop_phis) {
+                //     localVars[idx] = phi_id;
+                // }
                 
                 // 只需創建 End 節點
                 int end_id = newValue(Op::End);
