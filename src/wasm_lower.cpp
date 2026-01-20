@@ -255,12 +255,18 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             if (!stack.empty()) {
                 int val = stack.back();
                 stack.pop_back();
-                localVars[ins.operand] = val;
-        
-                printState(
-                    "LocalSet(" + std::to_string(ins.operand) + ")", 
-                    "-"  // LocalSet 不创建新 SSA
-                );
+                
+                // ✅ 創建 LocalSet 節點
+                int set_id = newValue(Op::LocalSet);
+                values[set_id].paramIndex = ins.operand;  // 存儲變量索引
+                values[set_id].lhs = val;  // 存儲要設置的值
+                
+                localVars[ins.operand] = val;  // 更新映射（用於優化）
+                
+                char buf[100];
+                sprintf(buf, "v%d = LocalSet(local_%d, v%d)", 
+                        set_id, ins.operand, val);
+                printState("LocalSet", buf);
             }
             break;
         }
@@ -610,7 +616,9 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             values[i].op == Op::If ||
             values[i].op == Op::Else ||
             values[i].op == Op::End ||
-            values[i].op == Op::Br_if) {
+            values[i].op == Op::Br_if ||
+            values[i].op == Op::LocalSet ||
+            values[i].op == Op::LocalGet) {
             used[i] = true;
         }
     }

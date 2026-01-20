@@ -96,10 +96,10 @@ IRFunction* IRBridge::build(const ValueIR& values) {
     // 为每个可能的局部变量创建 VAR
     std::set<int> local_indices;
     for (const auto& v : values) {
-        // if (v.op == Op::Param || v.op == Op::LocalGet || 
-        //     v.op == Op::LocalSet || v.op == Op::LocalTee) {
-        //     local_indices.insert(v.paramIndex);
-        // }
+        if (v.op == Op::Param || v.op == Op::LocalGet || 
+            v.op == Op::LocalSet || v.op == Op::LocalTee) {
+            local_indices.insert(v.paramIndex);
+        }
         // 从 Phi 节点收集局部变量索引
         if (v.op == Op::Phi && v.local_index >= 0) {
             local_indices.insert(v.local_index);
@@ -421,6 +421,86 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             break;
         }
         
+        case Op::LocalGet: {
+            int var_idx = val.paramIndex;
+            
+            // ✅ 檢查是否有對應的 VAR
+            auto it = local_vars.find(var_idx);
+            if (it == local_vars.end()) {
+                fprintf(stderr, "ERROR: LocalGet for untracked local_%d\n", var_idx);
+                break;
+            }
+            
+            ir_ref var_ref = it->second;
+            
+            // ✅ 從 VAR 加載值
+            ir_ref loaded_val = ir_VLOAD_I32(var_ref);
+            value_map[i] = loaded_val;
+            
+            TRACE("  v%zu = LocalGet(local_%d) -> ir_VLOAD_I32(var %d) = ref %d\n\n",
+                i, var_idx, var_ref, loaded_val);
+            break;
+        }
+
+        case Op::LocalSet: {
+            int var_idx = val.paramIndex;
+            
+            // ✅ 檢查是否有對應的 VAR
+            auto it = local_vars.find(var_idx);
+            if (it == local_vars.end()) {
+                fprintf(stderr, "ERROR: LocalSet for untracked local_%d\n", var_idx);
+                break;
+            }
+            
+            ir_ref var_ref = it->second;
+            
+            // ✅ 檢查要存儲的值是否有效
+            if (val.lhs < 0 || val.lhs >= (int)i) {
+                fprintf(stderr, "ERROR: Invalid value index %d for LocalSet\n", val.lhs);
+                break;
+            }
+            
+            ir_ref value_ref = value_map[val.lhs];
+            
+            // ✅ 存儲到 VAR
+            ir_VSTORE(var_ref, value_ref);
+            
+            TRACE("  v%zu = LocalSet(local_%d, v%d) -> ir_VSTORE(var %d, ref %d)\n\n",
+                i, var_idx, val.lhs, var_ref, value_ref);
+            
+            // ✅ LocalSet 本身不產生值，所以不設置 value_map[i]
+            break;
+        }
+
+        case Op::LocalTee: {
+            int var_idx = val.paramIndex;
+            
+            auto it = local_vars.find(var_idx);
+            if (it == local_vars.end()) {
+                fprintf(stderr, "ERROR: LocalTee for untracked local_%d\n", var_idx);
+                break;
+            }
+            
+            ir_ref var_ref = it->second;
+            
+            if (val.lhs < 0 || val.lhs >= (int)i) {
+                fprintf(stderr, "ERROR: Invalid value index %d for LocalTee\n", val.lhs);
+                break;
+            }
+            
+            ir_ref value_ref = value_map[val.lhs];
+            
+            // ✅ 存儲到 VAR
+            ir_VSTORE(var_ref, value_ref);
+            
+            // ✅ LocalTee 會返回存儲的值（與 LocalSet 的區別）
+            value_map[i] = value_ref;
+            
+            TRACE("  v%zu = LocalTee(local_%d, v%d) -> ir_VSTORE + return ref %d\n\n",
+                i, var_idx, val.lhs, value_ref);
+            break;
+        }
+
         case Op::Return: {            
             if (val.lhs < 0 || val.lhs >= (int)i) break;
             
