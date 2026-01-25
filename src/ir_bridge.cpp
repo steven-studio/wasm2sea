@@ -25,6 +25,14 @@ extern "C" {
 }
 #include <stack>
 
+// 在文件開頭添加 if 追蹤結構
+struct IfInfo {
+    ir_ref if_node;      // ir_IF 的返回值
+    ir_ref end_true;     // true 分支的 END 節點
+    bool has_else;       // 是否有 else 分支
+};
+std::stack<IfInfo> if_stack;
+
 // 在 build() 函数中添加循环信息追踪
 struct LoopInfo {
     ir_ref loop_begin;           // ← 改名：LOOP_BEGIN 節點
@@ -261,6 +269,11 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             ir_ref lhs_ref = value_map[val.lhs];
             ir_ref rhs_ref = value_map[val.rhs];
             value_map[i] = ir_EQ(lhs_ref, rhs_ref);  // 注意：沒有 _I32 後綴
+            
+            // ===== 添加这行 =====
+            TRACE("  v%zu = Eq(v%d, v%d) -> ir_EQ(ref %d, ref %d) = ref %d\n\n",
+                i, val.lhs, val.rhs, lhs_ref, rhs_ref, value_map[i]);
+            // ===== 结束 =====            
             break;
         }
 
@@ -577,9 +590,78 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             break;
         }
 
-        case Op::If:
-        case Op::Else:
+        case Op::If: {
+            if (val.lhs < 0 || val.lhs >= (int)i) {
+                fprintf(stderr, "ERROR: Invalid condition for If\n");
+                break;
+            }
+            
+            ir_ref cond_ref = value_map[val.lhs];
+            TRACE("  v%zu = If(cond=v%d)\n", i, val.lhs);
+            
+            // 創建 IF 節點
+            ir_ref if_node = ir_IF(cond_ref);
+            TRACE("    ir_IF(ref %d) = ref %d\n", cond_ref, if_node);
+            
+            // 進入 true 分支
+            ir_IF_TRUE(if_node);
+            TRACE("    ir_IF_TRUE -> entering true branch\n\n");
+            
+            // 推入棧以追蹤
+            IfInfo info;
+            info.if_node = if_node;
+            info.end_true = IR_UNUSED;  // 稍後在 Else 或 End 設置
+            info.has_else = false;
+            if_stack.push(info);
+            
+            break;
+        }
+
+        case Op::Else: {
+            if (if_stack.empty()) {
+                fprintf(stderr, "ERROR: Else without matching If\n");
+                break;
+            }
+            
+            TRACE("  v%zu = Else\n", i);
+            
+            // 結束 true 分支
+            // ir_ref end_true = ir_END();
+            // TRACE("    ir_END (true branch) = ref %d\n", end_true);
+            
+            // 保存 end_true 供後續 merge 使用
+            // if_stack.top().end_true = end_true;
+            if_stack.top().has_else = true;
+            
+            // 進入 false 分支
+            ir_IF_FALSE(if_stack.top().if_node);
+            TRACE("    ir_IF_FALSE -> entering false branch\n\n");
+            
+            break;
+        }
+
         case Op::End: {
+            if (if_stack.empty()) {
+                // 可能是 loop 的 end，這裡先忽略
+                // TRACE("  v%zu = End (loop or block end)\n\n", i);
+                break;
+            }
+            
+            // TRACE("  v%zu = End (if end)\n", i);
+            
+            IfInfo info = if_stack.top();
+            if_stack.pop();
+            
+            if (info.has_else) {
+                // 有 else 分支（兩個分支都已經 Return 終止）
+                TRACE("    (both branches terminated by Return)\n");
+            } else {
+                // 沒有 else 分支（true 分支 Return 終止，進入空的 false 分支）
+                ir_IF_FALSE(info.if_node);
+                TRACE("    ir_IF_FALSE\n");
+            }
+            
+            TRACE("\n");
             break;
         }
 
@@ -693,6 +775,7 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             
             // 4. True 分支：回跳到 LOOP_BEGIN
             ir_IF_TRUE(if_node);
+            TRACE("    ir_IF_TRUE\n");  // ← 加這行
             ir_ref loop_end_ref = ir_LOOP_END();
             TRACE("    ir_LOOP_END = ref %d\n", loop_end_ref);
             
