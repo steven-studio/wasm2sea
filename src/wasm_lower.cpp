@@ -138,11 +138,6 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             control_stack.pop_back();
             
             if (frame.type == ControlFrame::Loop) {
-                // ✅ 恢復 localVars 為 Phi 節點
-                // for (auto& [idx, phi_id] : frame.loop_phis) {
-                //     localVars[idx] = phi_id;
-                // }
-                
                 // 只需創建 End 節點
                 int end_id = newValue(Op::End);
                 char buf[100];
