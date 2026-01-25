@@ -256,16 +256,20 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
                 int val = stack.back();
                 stack.pop_back();
                 
+                // ✅ 直接更新映射，不创建 LocalSet 节点
+                localVars[ins.operand] = val;
+
                 // ✅ 創建 LocalSet 節點
-                int set_id = newValue(Op::LocalSet);
-                values[set_id].paramIndex = ins.operand;  // 存儲變量索引
-                values[set_id].lhs = val;  // 存儲要設置的值
+                // int set_id = newValue(Op::LocalSet);
+                // values[set_id].paramIndex = ins.operand;  // 存儲變量索引
+                // values[set_id].lhs = val;  // 存儲要設置的值
                 
-                localVars[ins.operand] = val;  // 更新映射（用於優化）
+                // localVars[ins.operand] = val;  // 更新映射（用於優化）
                 
                 char buf[100];
-                sprintf(buf, "v%d = LocalSet(local_%d, v%d)", 
-                        set_id, ins.operand, val);
+                // sprintf(buf, "v%d = LocalSet(local_%d, v%d)", 
+                //         set_id, ins.operand, val);
+                sprintf(buf, "Updated local_%d = v%d (no IR node)", ins.operand, val);
                 printState("LocalSet", buf);
             }
             break;
