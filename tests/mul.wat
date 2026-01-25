@@ -1,10 +1,9 @@
 (module
-  (func $mul (param $x i32) (param $y i32) (result i32)
-    local.get $x
-    local.get $y
-    i32.mul
+  (func (export "main") (param $a i32) (param $b i32) (result i32)
+    ;; Multiplication: a * b
+    (i32.mul
+      (local.get $a)
+      (local.get $b)
+    )
   )
-
-  ;; 為了後面測試方便，加一個 export
-  (export "mul" (func $mul))
 )

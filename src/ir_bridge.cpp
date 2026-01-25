@@ -670,12 +670,22 @@ IRFunction* IRBridge::build(const ValueIR& values) {
                     ir_ref entry_ref = value_map[entry_val_id];
                     ir_ref backedge_ref = value_map[backedge_val_id];
                     
+                    // ✅ 加入這些檢查！
+                    TRACE("      Updating PHI v%d (ir_ref %d):\n", phi_id, phi_ref);
+                    TRACE("        entry   = v%d -> ir_ref %d\n", entry_val_id, entry_ref);
+                    TRACE("        backedge = v%d -> ir_ref %d\n", backedge_val_id, backedge_ref);
+
+                    // ⚠️ 關鍵檢查
+                    if (backedge_ref == IR_UNUSED) {
+                        TRACE("        ❌ ERROR: backedge is IR_UNUSED!\n");
+                    }
+                    if (backedge_ref == entry_ref) {
+                        TRACE("        ⚠️  WARNING: backedge == entry (PHI won't change!)\n");
+                    }
+
                     // ✅ 显式设置两个操作数
                     // ir_set_op(ctx_, phi_ref, 1, entry_ref);     // 第一个操作数
                     ir_PHI_SET_OP(phi_ref, 2, backedge_ref);  // 第二个操作数
-                    
-                    TRACE("      PHI ref %d: op1=ref %d, op2=ref %d\n", 
-                        phi_ref, entry_ref, backedge_ref);
                 }
             }
             
