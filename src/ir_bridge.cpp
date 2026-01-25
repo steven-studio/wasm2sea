@@ -589,7 +589,6 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             
             // 創建 LOOP_BEGIN 節點
             ir_ref loop_begin = ir_LOOP_BEGIN(ir_END());
-            ctx_->control = loop_begin;  // ← 關鍵：設置當前控制流
             
             TRACE("    ir_LOOP_BEGIN = ref %d\n", loop_begin);
             
