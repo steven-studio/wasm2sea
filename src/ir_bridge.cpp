@@ -515,12 +515,15 @@ IRFunction* IRBridge::build(const ValueIR& values) {
         }
         
         case Op::Const: {
-            value_map[i] = ir_CONST_I32(val.constValue);
+            ir_ref c = ir_CONST_I32(val.constValue);
+            TRACE(" v%zu = Const(%d) -> ir_CONST_I32(%d) = ref %d (literal)\n",
+            i, val.constValue, val.constValue, c);
 
-            // ===== 添加这行 =====
-            TRACE("  v%zu = Const(%d) -> ir_CONST_I32(%d) = ref %d\n\n",
-                i, val.constValue, val.constValue, value_map[i]);
-            // ===== 结束 =====
+            ir_ref copy = ir_COPY_I32(c);
+            value_map[i] = copy;
+
+            TRACE(" -> ir_COPY_I32(ref %d) = ref %d (value)\n\n",
+            c, copy);
             break;
         }
 
@@ -577,9 +580,6 @@ IRFunction* IRBridge::build(const ValueIR& values) {
         case Op::If:
         case Op::Else:
         case Op::End: {
-            if (!loop_stack.empty()) {
-                loop_stack.pop();
-            }
             break;
         }
 
@@ -683,7 +683,6 @@ IRFunction* IRBridge::build(const ValueIR& values) {
                     }
 
                     // ✅ 显式设置两个操作数
-                    // ir_set_op(ctx_, phi_ref, 1, entry_ref);     // 第一个操作数
                     ir_PHI_SET_OP(phi_ref, 2, backedge_ref);  // 第二个操作数
                 }
             }
