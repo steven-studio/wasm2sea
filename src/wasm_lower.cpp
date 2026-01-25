@@ -256,11 +256,11 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
                 localVars[ins.operand] = val;
 
                 // ✅ 創建 LocalSet 節點
-                // int set_id = newValue(Op::LocalSet);
-                // values[set_id].paramIndex = ins.operand;  // 存儲變量索引
-                // values[set_id].lhs = val;  // 存儲要設置的值
+                int set_id = newValue(Op::LocalSet);
+                values[set_id].paramIndex = ins.operand;  // 存儲變量索引
+                values[set_id].lhs = val;  // 存儲要設置的值
                 
-                // localVars[ins.operand] = val;  // 更新映射（用於優化）
+                localVars[ins.operand] = val;  // 更新映射（用於優化）
                 
                 char buf[100];
                 // sprintf(buf, "v%d = LocalSet(local_%d, v%d)", 
