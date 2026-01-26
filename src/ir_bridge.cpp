@@ -626,11 +626,11 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             TRACE("  v%zu = Else\n", i);
             
             // 結束 true 分支
-            // ir_ref end_true = ir_END();
-            // TRACE("    ir_END (true branch) = ref %d\n", end_true);
+            ir_ref end_true = ir_END();
+            TRACE("    ir_END (true branch) = ref %d\n", end_true);
             
             // 保存 end_true 供後續 merge 使用
-            // if_stack.top().end_true = end_true;
+            if_stack.top().end_true = end_true;
             if_stack.top().has_else = true;
             
             // 進入 false 分支
@@ -653,8 +653,14 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             if_stack.pop();
             
             if (info.has_else) {
-                // 有 else 分支（兩個分支都已經 Return 終止）
-                TRACE("    (both branches terminated by Return)\n");
+                // ✅ 结束 false 分支
+                ir_ref end_false = ir_END();
+                TRACE("    ir_END (false branch) = ref %d\n", end_false);
+                
+                // ✅ 创建 MERGE
+                ir_MERGE_2(info.end_true, end_false);
+                TRACE("    ir_MERGE_2(ref %d, ref %d)\n", 
+                    info.end_true, end_false);
             } else {
                 // 沒有 else 分支（true 分支 Return 終止，進入空的 false 分支）
                 ir_IF_FALSE(info.if_node);
@@ -687,39 +693,53 @@ IRFunction* IRBridge::build(const ValueIR& values) {
         case Op::Phi: {
             TRACE("  v%zu = Phi\n", i);
             
-            // ===== 添加：打印 operands =====
+            // 打印 operands
             TRACE("    Phi operands: [");
             for (size_t j = 0; j < val.operands.size(); j++) {
                 TRACE("v%d", val.operands[j]);
                 if (j < val.operands.size() - 1) TRACE(", ");
             }
             TRACE("]\n");
-            // ===== 结束 =====
+            TRACE("    local_index = %d\n", val.local_index);
             
-            // ✅ 直接创建 PHI
-            if (!val.operands.empty()) {
-                int op0 = val.operands[0];
-                TRACE("    Phi op0 value-id = %d\n", op0);
-                TRACE("    value_map[op0]   = %d\n", value_map[op0]);
-
-                if (value_map[op0] == IR_UNUSED) {
-                    TRACE("    ERROR: Phi entry is IR_UNUSED (op0=%d)\n", op0);
-                }
-
+            if (val.operands.empty()) {
+                TRACE("    ERROR: Phi with no operands\n\n");
+                break;
+            }
+            
+            if (val.local_index >= 0) {
+                // ========== Loop Phi ==========
+                TRACE("    Type: Loop Phi (for local_%d)\n", val.local_index);
+                
                 ir_ref entry_val = value_map[val.operands[0]];
                 ir_ref phi = ir_PHI_2(IR_I32, entry_val, IR_UNUSED);
                 value_map[i] = phi;
                 
-                // ===== 添加：打印创建结果 =====
                 TRACE("    Created PHI = ref %d (entry=ref %d, backedge=UNUSED)\n", 
                     phi, entry_val);
-                TRACE("    local_index = %d\n", val.local_index);
-                // ===== 结束 =====
                 
                 if (!loop_stack.empty()) {
                     loop_stack.top().phi_ids.push_back(i);
                     TRACE("    Added to loop_stack.phi_ids\n");
                 }
+                
+            } else {
+                // ========== If Phi ==========
+                TRACE("    Type: If Phi (expression value)\n");
+                
+                if (val.operands.size() != 2) {
+                    TRACE("    ERROR: If Phi should have exactly 2 operands\n\n");
+                    break;
+                }
+                
+                // ✅ 关键：If Phi 创建时就设置两个操作数！
+                ir_ref then_val = value_map[val.operands[0]];
+                ir_ref else_val = value_map[val.operands[1]];
+                ir_ref phi = ir_PHI_2(IR_I32, then_val, else_val);
+                value_map[i] = phi;
+                
+                TRACE("    Created PHI = ref %d (then=ref %d, else=ref %d)\n", 
+                    phi, then_val, else_val);
             }
             
             TRACE("\n");

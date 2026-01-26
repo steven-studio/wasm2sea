@@ -23,7 +23,7 @@ cd ~/wasm2sea/build
 echo ""
 echo "=== Step 3: Generate C code from IR ==="
 cd ~/wasm2sea/third_party/dstogov-ir
-./ir_main ../../build/test.ir --emit-c out.c
+./ir ../../build/main.ir --emit-c out.c
 
 echo ""
 echo "=== Step 4: Compile C code with libffi ==="

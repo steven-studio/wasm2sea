@@ -68,7 +68,7 @@ struct Value {
     // 為了向後兼容，可以加 operands 陣列
     std::vector<int> operands;
     
-    int local_index;  // ← 新增：对于 Phi，记录对应的局部变量索引
+    int local_index = -1;  // ✅ 初始化为 -1 表示"未设置"
 
     // 建構函式（可選）
     Value() = default;

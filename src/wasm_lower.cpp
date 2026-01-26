@@ -40,6 +40,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
         
         // ✅ 新增：If 专用 - 保存 if 开始时的局部变量
         std::unordered_map<int, int> entry_locals;  // if 入口時的局部變量
+        std::unordered_map<int, int> then_locals;   // ← 新增：then 结束时
+        std::unordered_map<int, int> else_locals;   // ← 新增：else 结束时
     };
     std::vector<ControlFrame> control_stack;
 
@@ -115,6 +117,9 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
         case WasmOp::Else: {
             if (control_stack.empty()) break;
             
+            // ✅ 保存 then 分支结束时的 locals
+            control_stack.back().then_locals = localVars;
+
             // 记录 then 分支的结果
             if (stack.size() > control_stack.back().stack_size) {
                 int then_val = stack.back();
@@ -122,6 +127,9 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
                 control_stack.back().then_values.push_back(then_val);
             }
             
+            // ✅ 恢复到 if 入口的 locals（开始 else 分支）
+            localVars = control_stack.back().entry_locals;
+
             // 创建 Else 节点
             int else_id = newValue(Op::Else);
     
@@ -145,58 +153,41 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
                 sprintf(buf, "v%d = End", end_id);
                 printState("End", buf);
             } else {
-                // ✅ If/Else 處理：合併局部變量
+                // ✅ 保存 else 分支结束时的 locals
+                frame.else_locals = localVars;
                 
-                // 1. 對於每個在 if 內被修改的局部變量，創建 Phi
-                for (auto& [idx, entry_val] : frame.entry_locals) {
-                    if (localVars.count(idx) && localVars[idx] != entry_val) {
-                        // 這個變量在 if 內被修改了
-                        int select_id = newValue(Op::Select);  // ✅ 使用 Select
-                        values[select_id].operands = {
-                            frame.cond_id,      // 條件
-                            localVars[idx],     // if 為真時的值（then 分支）
-                            entry_val           // if 為假時的值（entry）
-                        };
-                        localVars[idx] = select_id;
-                    }
-                }
-
-                // 记录 else 分支的结果（如果有）
+                // 记录 else 分支的返回值
                 if (stack.size() > frame.stack_size) {
                     int else_val = stack.back();
                     stack.pop_back();
                     frame.else_values.push_back(else_val);
                 }
                 
-                // 创建 End 节点并生成 Select/Phi
+                // ❌ 删掉所有 Select 生成逻辑！
+                
+                // ✅ 只创建 End
                 int end_id = newValue(Op::End);
+                
                 char buf[200];
-
-                // 如果 then 和 else 都有返回值，创建一个选择
+                
+                // ✅ 如果是 expression-if（有返回值），创建 Phi
                 if (!frame.then_values.empty() && !frame.else_values.empty()) {
-                    int select_id = newValue(Op::Select);
-                    values[select_id].operands = {
-                        frame.cond_id,
-                        frame.then_values[0],   // ← 交换：else 在前
-                        frame.else_values[0]    // ← 交换：then 在后
+                    int phi_id = newValue(Op::Phi);
+                    values[phi_id].operands = {
+                        frame.then_values[0],
+                        frame.else_values[0]
                     };
-                    stack.push_back(select_id);
-                                
-                    sprintf(buf, "v%d = End, v%d = Select(v%d, v%d, v%d)", 
-                            end_id, select_id, frame.cond_id, 
+                    stack.push_back(phi_id);
+                    
+                    sprintf(buf, "v%d = End, v%d = Phi(v%d, v%d)", 
+                            end_id, phi_id, 
                             frame.then_values[0], frame.else_values[0]);
-                } else if (!frame.then_values.empty()) {
-                    // 只有 then 分支有值
-                    stack.push_back(frame.then_values[0]);
-                    sprintf(buf, "v%d = End", end_id);
-                } else if (!frame.else_values.empty()) {
-                    // 只有 else 分支有值
-                    stack.push_back(frame.else_values[0]);
-                    sprintf(buf, "v%d = End", end_id);
                 } else {
                     sprintf(buf, "v%d = End", end_id);
                 }
-
+                
+                // TODO: 合并 locals 的 Phi（下一步再做）
+                
                 printState("End", buf);
             }
             break;
