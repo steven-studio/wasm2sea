@@ -46,12 +46,27 @@ enum class WasmOp {
     Br,
     Br_if,
 
-    Return
+    Return,
+    // F64 算術
+    F64Const,
+    F64Add, F64Sub, F64Mul, F64Div,
+    F64Abs, F64Neg, F64Sqrt,
+    F64Min, F64Max,
+    // F64 比較
+    F64Eq, F64Ne, F64Lt, F64Gt, F64Le, F64Ge,
+    // F64 轉換
+    F64ConvertI32S, F64ConvertI32U,
+    I32TruncF64S, I32TruncF64U,
+    // Memory
+    F64Load, F64Store,
+    I32Load, I32Store,
+    Unsupported
 };
 
 struct Instr {
     WasmOp op;
     int operand;
+    double foperand = 0.0;  // ← 加這行
 };
 
 struct InstrSeq {

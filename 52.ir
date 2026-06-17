@@ -1,0 +1,30 @@
+{
+	uintptr_t c_1 = 0;
+	bool c_2 = 0;
+	bool c_3 = 1;
+	int32_t c_4 = 0;
+	int32_t c_5 = -64;
+	int32_t c_6 = -1022;
+	l_1 = START(l_22);
+	int32_t d_2 = PARAM(l_1, "p1", 2);
+	int32_t d_3 = VAR(l_1, "local_0");
+	int32_t d_4 = VAR(l_1, "local_1");
+	l_5 = VSTORE(l_1, d_4, d_2);
+	int32_t d_6 = VAR(l_1, "local_3");
+	int32_t d_7 = COPY(c_4);
+	l_8 = VSTORE(l_5, d_6, d_7);
+	int32_t d_9 = COPY(c_4);
+	l_10 = VSTORE(l_8, d_3, d_9);
+	int32_t d_11, l_11 = LOAD(l_10, d_2);
+	int32_t d_12 = COPY(c_5);
+	int32_t d_13 = ADD(d_11, d_12);
+	l_14 = VSTORE(l_11, d_6, d_13);
+	l_15 = STORE(l_14, d_2, d_13);
+	l_16 = RETURN(l_15, d_9);
+	int32_t d_17 = COPY(c_6);
+	int32_t d_18 = ADD(d_13, d_17);
+	l_19 = STORE(null, d_2, d_18);
+	int32_t d_20 = COPY(c_4);
+	l_21 = VSTORE(l_19, d_3, d_20);
+	l_22 = RETURN(l_21, d_20, l_16);
+}

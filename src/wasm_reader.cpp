@@ -31,14 +31,34 @@ public:
 
     void visitExpression(Expression* curr) {
         // 手动控制遍历顺序
-        
+        if (!curr) return;
         if (auto* localGet = curr->dynCast<LocalGet>()) {
             instructions.push_back({WasmOp::LocalGet, (int)localGet->index});
         }
         else if (auto* cnst = curr->dynCast<Const>()) {
             if (cnst->type == Type::i32) {
                 instructions.push_back({WasmOp::I32Const, cnst->value.geti32()});
+            } else if (cnst->type == Type::f64) {
+                Instr instr;
+                instr.op = WasmOp::F64Const;
+                instr.foperand = cnst->value.getf64();
+                instructions.push_back(instr);
             }
+        }
+        else if (auto* load = curr->dynCast<Load>()) {
+            visitExpression(load->ptr);
+            Instr instr;
+            instr.op = WasmOp::I32Load;  // 先用 I32Load，之後再細分 f64
+            instr.operand = (int)load->offset;
+            instructions.push_back(instr);
+        }
+        else if (auto* store = curr->dynCast<Store>()) {
+            visitExpression(store->ptr);
+            visitExpression(store->value);
+            Instr instr;
+            instr.op = WasmOp::I32Store;
+            instr.operand = (int)store->offset;
+            instructions.push_back(instr);
         }
         else if (auto* bin = curr->dynCast<Binary>()) {
             // 后序遍历：先左后右再操作符
@@ -74,7 +94,18 @@ public:
             case ShlInt32: instructions.push_back({WasmOp::I32Shl, 0}); break;
             case ShrSInt32: instructions.push_back({WasmOp::I32ShrS, 0}); break;
             case ShrUInt32: instructions.push_back({WasmOp::I32ShrU, 0}); break;
-
+            case AddFloat64: instructions.push_back({WasmOp::F64Add, 0}); break;
+            case SubFloat64: instructions.push_back({WasmOp::F64Sub, 0}); break;
+            case MulFloat64: instructions.push_back({WasmOp::F64Mul, 0}); break;
+            case DivFloat64: instructions.push_back({WasmOp::F64Div, 0}); break;
+            case EqFloat64:  instructions.push_back({WasmOp::F64Eq,  0}); break;
+            case NeFloat64:  instructions.push_back({WasmOp::F64Ne,  0}); break;
+            case LtFloat64:  instructions.push_back({WasmOp::F64Lt,  0}); break;
+            case GtFloat64:  instructions.push_back({WasmOp::F64Gt,  0}); break;
+            case LeFloat64:  instructions.push_back({WasmOp::F64Le,  0}); break;
+            case GeFloat64:  instructions.push_back({WasmOp::F64Ge,  0}); break;
+            case MinFloat64: instructions.push_back({WasmOp::F64Min, 0}); break;
+            case MaxFloat64: instructions.push_back({WasmOp::F64Max, 0}); break;
             default:
                 fprintf(stderr, "Warning: Unsupported binary op: %d\n", bin->op);
                 break;
@@ -87,6 +118,13 @@ public:
             case ClzInt32: instructions.push_back({WasmOp::I32Clz, 0}); break;
             case CtzInt32: instructions.push_back({WasmOp::I32Ctz, 0}); break;
             case PopcntInt32: instructions.push_back({WasmOp::I32Popcnt, 0}); break;
+            case AbsFloat64:  instructions.push_back({WasmOp::F64Abs,  0}); break;
+            case NegFloat64:  instructions.push_back({WasmOp::F64Neg,  0}); break;
+            case SqrtFloat64: instructions.push_back({WasmOp::F64Sqrt, 0}); break;
+            case ConvertSInt32ToFloat64: instructions.push_back({WasmOp::F64ConvertI32S, 0}); break;
+            case ConvertUInt32ToFloat64: instructions.push_back({WasmOp::F64ConvertI32U, 0}); break;
+            case TruncSFloat64ToInt32:   instructions.push_back({WasmOp::I32TruncF64S, 0}); break;
+            case TruncUFloat64ToInt32:   instructions.push_back({WasmOp::I32TruncF64U, 0}); break;
             default:
                 fprintf(stderr, "Warning: Unsupported unary op: %d\n", unary->op);
                 break;
@@ -159,6 +197,12 @@ public:
             visitExpression(select->ifTrue);
             visitExpression(select->condition);
             instructions.push_back({WasmOp::Select, 0});
+        }
+        else {
+            // Unsupported instruction, skip
+            std::cerr << "[WARN] Unsupported expression type: " 
+                    << wasm::getExpressionName(curr) << "\n";
+            instructions.push_back({WasmOp::Unsupported, 0});
         }
     }
 };

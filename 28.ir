@@ -1,0 +1,15 @@
+{
+	uintptr_t c_1 = 0;
+	bool c_2 = 0;
+	bool c_3 = 1;
+	int32_t c_4 = 0;
+	l_1 = START(l_9);
+	int32_t d_2 = PARAM(l_1, "p2", 3);
+	int32_t d_3 = VAR(l_1, "local_2");
+	l_4 = VSTORE(l_1, d_3, d_2);
+	int32_t d_5 = COPY(c_4);
+	l_6 = STORE(l_4, d_5, d_2);
+	int32_t d_7 = COPY(c_4);
+	l_8 = VSTORE(l_6, d_3, d_7);
+	l_9 = RETURN(l_8, d_7);
+}

@@ -25,6 +25,17 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
         return id;
     };
 
+    auto safePop = [&]() -> int {
+        if (stack.empty()) {
+            int id = newValue(Op::Const);
+            values[id].constValue = 0;
+            return id;
+        }
+        int v = stack.back();
+        stack.pop_back();
+        return v;
+    };
+
     // 控制流栈：记录 if/else 的信息
     struct ControlFrame {
         enum Type { If, Loop, Block } type;
@@ -553,11 +564,41 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
         }
 
         case WasmOp::Return: {
-            int v = stack.back(); stack.pop_back();
-            int id = newValue(Op::Return);
-            values[id].lhs = v;  // 要回傳的值
+            if (!stack.empty()) {
+                int v = stack.back(); stack.pop_back();
+                int id = newValue(Op::Return);
+                values[id].lhs = v;
+            }
             break;
         }
+
+        case WasmOp::I32Load:
+        case WasmOp::F64Load: {
+            int ptr = safePop();
+            int id = newValue(Op::Load);
+            values[id].lhs = ptr;
+            stack.push_back(id);
+            break;
+        }
+
+        case WasmOp::I32Store:
+        case WasmOp::F64Store: {
+            int val = safePop();
+            int ptr = safePop();
+            int id = newValue(Op::Store);
+            values[id].lhs = ptr;
+            values[id].rhs = val;
+            // Store 不 push，void
+            break;
+        }
+
+        case WasmOp::Unsupported: {
+            // Push dummy value so stack doesn't underflow
+            int id = newValue(Op::Const);
+            values[id].constValue = 0;
+            stack.push_back(id);
+            break;
+        }        
         }
     }
 
@@ -603,6 +644,7 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
     // ✅ 修正：控制流節點和 Return 節點都要保留
     for (size_t i = 0; i < values.size(); i++) {
         if (values[i].op == Op::Return ||
+            values[i].op == Op::Store ||
             values[i].op == Op::Loop ||
             values[i].op == Op::If ||
             values[i].op == Op::Else ||

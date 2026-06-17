@@ -811,6 +811,27 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             break;
         }
 
+        case Op::Load: {
+            if (val.lhs < 0 || val.lhs >= (int)i) break;
+            ir_ref ptr_ref = value_map[val.lhs];
+            if (ptr_ref == IR_UNUSED) break;
+            value_map[i] = ir_LOAD_I32(ptr_ref);
+            TRACE("  v%zu = Load(v%d) -> ir_LOAD_I32(ref %d) = ref %d\n\n",
+                i, val.lhs, ptr_ref, value_map[i]);
+            break;
+        }
+
+        case Op::Store: {
+            if (val.lhs < 0 || val.lhs >= (int)i) break;
+            if (val.rhs < 0 || val.rhs >= (int)i) break;
+            ir_ref ptr_ref = value_map[val.lhs];
+            ir_ref val_ref = value_map[val.rhs];
+            if (ptr_ref == IR_UNUSED || val_ref == IR_UNUSED) break;
+            ir_STORE(ptr_ref, val_ref);
+            TRACE("  v%zu = Store(v%d, v%d)\n\n", i, val.lhs, val.rhs);
+            break;
+        }
+        
         default:
             fprintf(stderr, "Unsupported Op: %d\n", (int)val.op);
             break;
