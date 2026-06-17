@@ -572,8 +572,7 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             break;
         }
 
-        case WasmOp::I32Load:
-        case WasmOp::F64Load: {
+        case WasmOp::I32Load: {
             int ptr = safePop();
             int id = newValue(Op::Load);
             values[id].lhs = ptr;
@@ -581,14 +580,76 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             break;
         }
 
-        case WasmOp::I32Store:
-        case WasmOp::F64Store: {
+        case WasmOp::F64Load: {
+            int ptr = safePop();
+            int id = newValue(Op::F64Load);
+            values[id].lhs = ptr;
+            stack.push_back(id);
+            break;
+        }
+
+        case WasmOp::I32Store: {
             int val = safePop();
             int ptr = safePop();
             int id = newValue(Op::Store);
             values[id].lhs = ptr;
             values[id].rhs = val;
-            // Store 不 push，void
+            break;
+        }
+
+        case WasmOp::F64Store: {
+            int val = safePop();
+            int ptr = safePop();
+            int id = newValue(Op::F64Store);
+            values[id].lhs = ptr;
+            values[id].rhs = val;
+            break;
+        }
+
+        case WasmOp::F64Const: {
+            int id = newValue(Op::F64Const);
+            values[id].constValue = 0;  // 先用 0，之後再加 foperand
+            stack.push_back(id);
+            break;
+        }
+
+        case WasmOp::F64Add: {
+            int rhs = safePop();
+            int lhs = safePop();
+            int id = newValue(Op::F64Add);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+
+        case WasmOp::F64Sub: {
+            int rhs = safePop();
+            int lhs = safePop();
+            int id = newValue(Op::F64Sub);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+
+        case WasmOp::F64Mul: {
+            int rhs = safePop();
+            int lhs = safePop();
+            int id = newValue(Op::F64Mul);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+
+        case WasmOp::F64Div: {
+            int rhs = safePop();
+            int lhs = safePop();
+            int id = newValue(Op::F64Div);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
             break;
         }
 
@@ -645,6 +706,7 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
     for (size_t i = 0; i < values.size(); i++) {
         if (values[i].op == Op::Return ||
             values[i].op == Op::Store ||
+            values[i].op == Op::F64Store ||
             values[i].op == Op::Loop ||
             values[i].op == Op::If ||
             values[i].op == Op::Else ||

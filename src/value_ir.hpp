@@ -63,6 +63,7 @@ enum class Op {
     I32TruncF64S, I32TruncF64U,
     // Memory
     Load, Store,
+    F64Load, F64Store,
     Return
 };
 

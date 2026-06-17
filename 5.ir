@@ -7,7 +7,7 @@
 	int32_t c_6 = 4194560;
 	int32_t c_7 = 3;
 	int32_t c_8 = 1;
-	l_1 = START(l_32);
+	l_1 = START(l_33);
 	int32_t d_2 = VAR(l_1, "local_0");
 	int32_t d_3 = COPY(c_4);
 	int32_t d_4 = COPY(c_5);
@@ -28,15 +28,16 @@
 	int32_t d_19 = COPY(c_7);
 	int32_t d_20 = SHL(d_18, d_19);
 	int32_t d_21 = ADD(d_17, d_20);
-	int32_t d_22, l_22 = LOAD(l_18, d_21);
-	int32_t d_23, l_23 = LOAD(l_22, d_5);
-	l_24 = STORE(l_23, d_22, d_23);
-	int32_t d_25, l_25 = LOAD(l_24, d_5);
-	int32_t d_26 = COPY(c_8);
-	int32_t d_27 = ADD(d_25, d_26);
-	l_28 = STORE(l_25, d_5, d_27);
-	int32_t d_29 = COPY(c_4);
+	double d_22, l_22 = LOAD(l_18, d_21);
+	double d_23, l_23 = LOAD(l_22, d_5);
+	double d_24 = ADD(d_22, d_23);
+	l_25 = STORE(l_23, d_5, d_24);
+	int32_t d_26, l_26 = LOAD(l_25, d_5);
+	int32_t d_27 = COPY(c_8);
+	int32_t d_28 = ADD(d_26, d_27);
+	l_29 = STORE(l_26, d_5, d_28);
 	int32_t d_30 = COPY(c_4);
-	l_31 = RETURN(l_28, d_30);
-	l_32 = RETURN(null, d_29, l_31);
+	int32_t d_31 = COPY(c_4);
+	l_32 = RETURN(l_29, d_31);
+	l_33 = RETURN(null, d_30, l_32);
 }

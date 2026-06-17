@@ -48,7 +48,11 @@ public:
         else if (auto* load = curr->dynCast<Load>()) {
             visitExpression(load->ptr);
             Instr instr;
-            instr.op = WasmOp::I32Load;  // 先用 I32Load，之後再細分 f64
+            if (load->type == Type::f64) {
+                instr.op = WasmOp::F64Load;
+            } else {
+                instr.op = WasmOp::I32Load;
+            }
             instr.operand = (int)load->offset;
             instructions.push_back(instr);
         }
@@ -56,7 +60,11 @@ public:
             visitExpression(store->ptr);
             visitExpression(store->value);
             Instr instr;
-            instr.op = WasmOp::I32Store;
+            if (store->valueType == Type::f64) {
+                instr.op = WasmOp::F64Store;
+            } else {
+                instr.op = WasmOp::I32Store;
+            }
             instr.operand = (int)store->offset;
             instructions.push_back(instr);
         }

@@ -811,6 +811,47 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             break;
         }
 
+        case Op::F64Const: {
+            value_map[i] = ir_CONST_DOUBLE(val.constValue);
+            break;
+        }
+
+        case Op::F64Add: {
+            if (val.lhs < 0 || val.rhs < 0) break;
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            if (lhs_ref == IR_UNUSED || rhs_ref == IR_UNUSED) break;
+            value_map[i] = ir_ADD_D(lhs_ref, rhs_ref);
+            break;
+        }
+
+        case Op::F64Sub: {
+            if (val.lhs < 0 || val.rhs < 0) break;
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            if (lhs_ref == IR_UNUSED || rhs_ref == IR_UNUSED) break;
+            value_map[i] = ir_SUB_D(lhs_ref, rhs_ref);
+            break;
+        }
+
+        case Op::F64Mul: {
+            if (val.lhs < 0 || val.rhs < 0) break;
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            if (lhs_ref == IR_UNUSED || rhs_ref == IR_UNUSED) break;
+            value_map[i] = ir_MUL_D(lhs_ref, rhs_ref);
+            break;
+        }
+
+        case Op::F64Div: {
+            if (val.lhs < 0 || val.rhs < 0) break;
+            ir_ref lhs_ref = value_map[val.lhs];
+            ir_ref rhs_ref = value_map[val.rhs];
+            if (lhs_ref == IR_UNUSED || rhs_ref == IR_UNUSED) break;
+            value_map[i] = ir_DIV_D(lhs_ref, rhs_ref);
+            break;
+        }
+
         case Op::Load: {
             if (val.lhs < 0 || val.lhs >= (int)i) break;
             ir_ref ptr_ref = value_map[val.lhs];
@@ -831,7 +872,24 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             TRACE("  v%zu = Store(v%d, v%d)\n\n", i, val.lhs, val.rhs);
             break;
         }
-        
+
+        case Op::F64Load: {
+            if (val.lhs < 0 || val.lhs >= (int)i) break;
+            ir_ref ptr_ref = value_map[val.lhs];
+            if (ptr_ref == IR_UNUSED) break;
+            value_map[i] = ir_LOAD_D(ptr_ref);
+            break;
+        }
+
+        case Op::F64Store: {
+            if (val.lhs < 0 || val.rhs < 0) break;
+            ir_ref ptr_ref = value_map[val.lhs];
+            ir_ref val_ref = value_map[val.rhs];
+            if (ptr_ref == IR_UNUSED || val_ref == IR_UNUSED) break;
+            ir_STORE(ptr_ref, val_ref);
+            break;
+        }
+
         default:
             fprintf(stderr, "Unsupported Op: %d\n", (int)val.op);
             break;

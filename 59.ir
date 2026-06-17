@@ -136,7 +136,7 @@
 	int32_t d_127 = COPY(c_8);
 	int32_t d_128 = ADD(d_126, d_127);
 	l_129 = STORE(l_122, d_3, d_128);
-	int32_t d_130, l_130 = LOAD(l_129, d_126);
+	double d_130, l_130 = LOAD(l_129, d_126);
 	l_131 = STORE(l_130, d_2, d_130);
 	int32_t d_132 = COPY(c_4);
 	l_133 = RETURN(l_131, d_132, l_15);
