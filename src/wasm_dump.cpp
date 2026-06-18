@@ -84,6 +84,10 @@ void dumpInstr(const Instr& instr, int indent) {
     case WasmOp::Br_if:
         printf("Br_if(depth=%d)\n", instr.operand);
         break;
+
+    case WasmOp::Drop:
+        printf("Drop\n");
+        break;
     
     // 无操作数的指令
     case WasmOp::I32Add:
