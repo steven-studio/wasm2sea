@@ -45,6 +45,9 @@ enum class WasmOp {
     Loop,
     Br,
     Br_if,
+    Drop,
+    GlobalGet,
+    GlobalSet,
 
     Return,
     // F64 算術

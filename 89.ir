@@ -2,7 +2,7 @@
 	uintptr_t c_1 = 0;
 	bool c_2 = 0;
 	bool c_3 = 1;
-	int32_t c_4 = 65631;
+	int32_t c_4 = 65636;
 	int32_t c_5 = 0;
 	int32_t c_6 = 66708;
 	l_1 = START(l_11);

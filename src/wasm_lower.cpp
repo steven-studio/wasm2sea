@@ -653,6 +653,11 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             break;
         }
 
+        case WasmOp::Drop: {
+            if (!stack.empty()) stack.pop_back();
+            break;
+        }
+
         case WasmOp::Unsupported: {
             // Push dummy value so stack doesn't underflow
             int id = newValue(Op::Const);

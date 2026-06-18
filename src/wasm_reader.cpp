@@ -16,6 +16,7 @@ using namespace wasm;
 class WasmToInstrSeqConverter : public Visitor<WasmToInstrSeqConverter> {
 public:
     InstrSeq instructions;
+    Module* modulePtr = nullptr;
     std::vector<Name> label_stack;  // 添加标签栈
     
     // 查找标签深度
@@ -200,11 +201,35 @@ public:
                 instructions.push_back({WasmOp::LocalSet, (int)localSet->index});
             }
         }
+        else if (auto* globalGet = curr->dynCast<GlobalGet>()) {
+            // 找 global 的 index
+            auto& globals = modulePtr->globals;
+            int idx = 0;
+            for (auto& g : globals) {
+                if (g->name == globalGet->name) break;
+                idx++;
+            }
+            instructions.push_back({WasmOp::GlobalGet, idx});
+        }
+        else if (auto* globalSet = curr->dynCast<GlobalSet>()) {
+            visitExpression(globalSet->value);
+            auto& globals = modulePtr->globals;
+            int idx = 0;
+            for (auto& g : globals) {
+                if (g->name == globalSet->name) break;
+                idx++;
+            }
+            instructions.push_back({WasmOp::GlobalSet, idx});
+        }
         else if (auto* select = curr->dynCast<Select>()) {
             visitExpression(select->ifFalse);
             visitExpression(select->ifTrue);
             visitExpression(select->condition);
             instructions.push_back({WasmOp::Select, 0});
+        }
+        else if (curr->is<wasm::Drop>()) {
+            visitExpression(curr->cast<wasm::Drop>()->value);
+            instructions.push_back({WasmOp::Drop, 0});
         }
         else {
             // Unsupported instruction, skip
@@ -322,6 +347,7 @@ std::vector<FunctionResult> readWasmFile(const std::string& filename) {
         
         // 使用 walker 轉換
         WasmToInstrSeqConverter converter;
+        converter.modulePtr = &module;
         // converter.numParams = numParams;  // ← 删除这行，Visitor 不需要
         converter.visitExpression(func->body);  // ← 改用 visitExpression
 

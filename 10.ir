@@ -11,13 +11,13 @@
 	int32_t d_5 = SUB(d_3, d_4);
 	l_6 = VSTORE(l_1, d_2, d_5);
 	int32_t d_7 = COPY(c_4);
-	double d_8, l_8 = LOAD(l_6, d_7);
-	int32_t d_9 = COPY(c_4);
-	double d_10, l_10 = LOAD(l_8, d_9);
-	double d_11 = SUB(d_8, d_10);
-	l_12 = STORE(l_10, d_5, d_11);
-	int32_t d_13 = COPY(c_4);
+	int32_t d_8 = COPY(c_4);
+	double d_9, l_9 = LOAD(l_6, d_8);
+	int32_t d_10 = COPY(c_4);
+	double d_11, l_11 = LOAD(l_9, d_10);
+	double d_12 = SUB(d_9, d_11);
+	l_13 = STORE(l_11, d_5, d_12);
 	int32_t d_14 = COPY(c_4);
-	l_15 = RETURN(l_12, d_14);
-	l_16 = RETURN(null, d_13, l_15);
+	l_15 = RETURN(l_13, d_14);
+	l_16 = RETURN(null, d_7, l_15);
 }
