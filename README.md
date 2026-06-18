@@ -12,20 +12,23 @@ Wasm2Sea translates WebAssembly bytecode to an intermediate representation (IR),
 - **Arithmetic Operations**: add, sub, mul, div (signed/unsigned), rem
 - **Comparisons**: eq, ne, lt, gt, le, ge (signed/unsigned), eqz
 - **Bitwise Operations**: and, or, xor, shl, shr (arithmetic/logical)
+- **Unary Operations**: clz, ctz, popcnt
 - **Local Variables**: local.get, local.set, local.tee
+- **Floating Point (F64)**: const, add, sub, mul, div, abs, neg, sqrt, min, max, eq, ne, lt, gt, le, ge, convert (i32→f64), trunc (f64→i32)
+- **Memory**: i32.load, i32.store, f64.load, f64.store
 - **Control Flow**: 
   - Select (ternary operator)
   - If-else with complex branches
   - Nested conditionals
+  - Loop with br, br_if
 
 ### In Progress 🚧
-- **Loops**: Loop structures parsed, execution not yet implemented
+- **F64 Memory**: f64.load detection via `load->bytes == 8` (partially implemented)
 
 ### Planned 📋
 - Block structures
 - Function calls
 - Memory operations
-- Additional types (i64, f32, f64)
 
 See [TODO.md](TODO.md) for complete list.
 
