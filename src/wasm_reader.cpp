@@ -110,6 +110,11 @@ public:
         instructions.push_back({WasmOp::Select, 0});
     }
 
+    void handleDrop(Drop* n) {
+        visitExpression(n->value);
+        instructions.push_back({WasmOp::Drop, 0});
+    }
+
     void handleIf(If* n) {
         visitExpression(n->condition);
         instructions.push_back({WasmOp::If, 0});
@@ -176,15 +181,15 @@ public:
         else if (auto* n = curr->dynCast<Binary>())   handleBinary(n);
         else if (auto* n = curr->dynCast<Unary>())    handleUnary(n);
         else if (auto* n = curr->dynCast<Select>())    handleSelect(n);
+        else if (auto* n = curr->dynCast<Drop>())      handleDrop(n);
+
+        // 控制流
         else if (auto* n = curr->dynCast<If>())       handleIf(n);
         else if (auto* n = curr->dynCast<Loop>())     handleLoop(n);
         else if (auto* n = curr->dynCast<Break>())   handleBreak(n);
         else if (auto* n = curr->dynCast<Block>())    handleBlock(n);
         else if (auto* n = curr->dynCast<Return>()) handleReturn(n);
-        else if (curr->is<wasm::Drop>()) {
-            visitExpression(curr->cast<wasm::Drop>()->value);
-            instructions.push_back({WasmOp::Drop, 0});
-        }
+        else if (auto* n = curr->dynCast<Drop>())      handleDrop(n);
         else if (auto* call = curr->dynCast<wasm::Call>()) {
             // 先 visit 所有參數（push 到 stack）
             for (auto* operand : call->operands) {
