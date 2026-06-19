@@ -20,6 +20,14 @@ TESTS=(
   "if_nested 3 4"
   "if_nested 3 -1"
   "if_nested -1 4"
+  "if_local_continue 1 5"
+  "if_local_continue 0 5"
+  "if_both_modify_local 1"
+  "if_both_modify_local 0"
+  "if_early_return 1"
+  "if_early_return 0"
+  "if_eqz 0"
+  "if_eqz 1"
 )
 
 PASS=0

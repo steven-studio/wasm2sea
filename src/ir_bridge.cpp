@@ -30,6 +30,7 @@ struct IfInfo {
     ir_ref if_node;      // ir_IF 的返回值
     ir_ref end_true;     // true 分支的 END 節點
     bool has_else;       // 是否有 else 分支
+    bool true_branch_returns;  // true 分支是否有 return
 };
 std::stack<IfInfo> if_stack;
 
@@ -587,6 +588,10 @@ IRFunction* IRBridge::build(const ValueIR& values) {
                 i, val.lhs, ret_val);
             
             ir_RETURN(ret_val);
+
+            if (!if_stack.empty() && !if_stack.top().has_else) {
+                if_stack.top().true_branch_returns = true;
+            }
             break;
         }
         
@@ -726,11 +731,16 @@ IRFunction* IRBridge::build(const ValueIR& values) {
                 TRACE("    ir_MERGE_2(ref %d, ref %d)\n", 
                     info.end_true, end_false);
             } else {
-                // 沒有 else 分支（true 分支 Return 終止，進入空的 false 分支）
-                ir_ref end_true = ir_END();
-                ir_IF_FALSE(info.if_node);
-                ir_ref end_false = ir_END();
-                ir_MERGE_2(end_true, end_false);
+                if (info.true_branch_returns) {
+                    // true 分支已經 RETURN，只需要 IF_FALSE
+                    ir_IF_FALSE(info.if_node);
+                } else {
+                    // true 分支正常結束，需要 MERGE
+                    ir_ref end_true = ir_END();
+                    ir_IF_FALSE(info.if_node);
+                    ir_ref end_false = ir_END();
+                    ir_MERGE_2(end_true, end_false);
+                }
             }
             
             TRACE("\n");
