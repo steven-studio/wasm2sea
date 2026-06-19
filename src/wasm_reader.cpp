@@ -167,6 +167,13 @@ public:
         }
     }
 
+    void handleSwitch(Switch* n) {
+        visitExpression(n->condition);
+        int depth = getLabelDepth(n->default_);
+        if (depth < 0) depth = 0;
+        instructions.push_back({WasmOp::BrTable, depth});
+    }
+
     void handleBlock(Block* n) {
         if (n->name.is()) label_stack.push_back(n->name);
         for (auto* expr : n->list) {
@@ -206,17 +213,10 @@ public:
         else if (auto* n = curr->dynCast<If>())       handleIf(n);
         else if (auto* n = curr->dynCast<Loop>())     handleLoop(n);
         else if (auto* n = curr->dynCast<Break>())   handleBreak(n);
+        else if (auto* n = curr->dynCast<Switch>())    handleSwitch(n);
         else if (auto* n = curr->dynCast<Block>())    handleBlock(n);
         else if (auto* n = curr->dynCast<Return>()) handleReturn(n);
         else if (auto* n = curr->dynCast<Drop>())      handleDrop(n);
-        else if (auto* sw = curr->dynCast<Switch>()) {
-            // 先計算 index
-            visitExpression(sw->condition);
-            // 用 default target 的 depth
-            int depth = getLabelDepth(sw->default_);
-            if (depth < 0) depth = 0;
-            instructions.push_back({WasmOp::BrTable, depth});
-        }
         else if (curr->is<wasm::Unreachable>()) {
             instructions.push_back({WasmOp::Unreachable, 0});
         }
