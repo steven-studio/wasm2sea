@@ -3,7 +3,7 @@
 TESTS=(
   "local_get_param 42"
   "local_get_uninitialized 0"
-  "local_set_then_get 0"
+  "local_set_then_get 2485"
   "local_set_overwrite_param 99"
   "local_set_multiple 0"
   "local_tee_stack 0"
