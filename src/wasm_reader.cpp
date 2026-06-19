@@ -183,9 +183,11 @@ public:
             }
         }
         else if (auto* block = curr->dynCast<Block>()) {
+            if (block->name.is()) label_stack.push_back(block->name);
             for (auto* expr : block->list) {
                 visitExpression(expr);
             }
+            if (block->name.is()) label_stack.pop_back();
         }
         else if (auto* ret = curr->dynCast<Return>()) {
             if (ret->value) {
@@ -230,6 +232,53 @@ public:
         else if (curr->is<wasm::Drop>()) {
             visitExpression(curr->cast<wasm::Drop>()->value);
             instructions.push_back({WasmOp::Drop, 0});
+        }
+        else if (auto* call = curr->dynCast<wasm::Call>()) {
+            // 先 visit 所有參數（push 到 stack）
+            for (auto* operand : call->operands) {
+                visitExpression(operand);
+            }
+            // 找 callee 的 function index
+            int calleeIdx = -1;
+            for (int i = 0; i < (int)modulePtr->functions.size(); i++) {
+                if (modulePtr->functions[i]->name == call->target) {
+                    calleeIdx = i;
+                    break;
+                }
+            }
+            Instr instr;
+            instr.op = WasmOp::Call;
+            instr.operand = calleeIdx;
+            instr.foperand = (double)call->operands.size();
+            instructions.push_back(instr);
+        }
+        else if (auto* sw = curr->dynCast<Switch>()) {
+            // 先計算 index
+            visitExpression(sw->condition);
+            // 用 default target 的 depth
+            int depth = getLabelDepth(sw->default_);
+            if (depth < 0) depth = 0;
+            instructions.push_back({WasmOp::BrTable, depth});
+        }
+        else if (curr->is<wasm::Unreachable>()) {
+            instructions.push_back({WasmOp::Unreachable, 0});
+        }
+        else if (curr->is<wasm::MemorySize>()) {
+            instructions.push_back({WasmOp::MemorySize, 0});
+        }
+        else if (curr->is<wasm::MemoryCopy>()) {
+            auto* mc = curr->cast<wasm::MemoryCopy>();
+            visitExpression(mc->dest);
+            visitExpression(mc->source);
+            visitExpression(mc->size);
+            instructions.push_back({WasmOp::MemoryCopy, 0});
+        }
+        else if (curr->is<wasm::MemoryFill>()) {
+            auto* mf = curr->cast<wasm::MemoryFill>();
+            visitExpression(mf->dest);
+            visitExpression(mf->value);
+            visitExpression(mf->size);
+            instructions.push_back({WasmOp::MemoryFill, 0});
         }
         else {
             // Unsupported instruction, skip

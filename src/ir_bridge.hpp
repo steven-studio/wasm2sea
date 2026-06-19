@@ -24,6 +24,7 @@ public:
 
     // 回傳 true 表示成功
     bool save(const char* path);
+    ir_ctx* getCtx() { return ctx_; }
 
 private:
     ir_ctx* ctx_;

@@ -45,11 +45,16 @@ enum class WasmOp {
     Loop,
     Br,
     Br_if,
+    BrTable,
+
     Drop,
     GlobalGet,
     GlobalSet,
 
     Return,
+    MemorySize,
+    MemoryCopy,
+    MemoryFill,
     // F64 算術
     F64Const,
     F64Add, F64Sub, F64Mul, F64Div,
@@ -63,6 +68,9 @@ enum class WasmOp {
     // Memory
     F64Load, F64Store,
     I32Load, I32Store,
+
+    Call,       // operand = callee func index, foperand = num_args
+    Unreachable,
     Unsupported
 };
 

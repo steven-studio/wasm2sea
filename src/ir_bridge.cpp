@@ -514,6 +514,62 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             break;
         }
 
+        case Op::Call: {
+            const auto& args = val.operands;
+            ir_ref name_ref = ir_str(ctx, val.callee_name.c_str());
+            ir_ref func_ref = ir_const_func(ctx, name_ref, IR_UNUSED);
+            
+            std::vector<ir_ref> arg_refs;
+            for (int arg_id : args) {
+                if (arg_id >= 0 && arg_id < (int)value_map.size())
+                    arg_refs.push_back(value_map[arg_id]);
+            }
+            
+            ir_ref result = ir_CALL_N(IR_I32, func_ref,
+                                    (uint32_t)arg_refs.size(),
+                                    arg_refs.data());
+            value_map[i] = result;
+            TRACE("  v%zu = Call(%s, %zu args) -> ir_CALL_N ref %d\n",
+                i, val.callee_name.c_str(), args.size(), result);
+            break;
+        }
+
+        case Op::Unreachable: {
+            ir_TRAP();
+            TRACE("  v%zu = Unreachable -> ir_TRAP()\n", i);
+            break;
+        }
+
+        case Op::MemorySize: {
+            ir_ref name_ref = ir_str(ctx, "__wasm_memory_size");
+            ir_ref func_ref = ir_const_func(ctx, name_ref, IR_UNUSED);
+            ir_ref result = ir_CALL(IR_I32, func_ref);
+            value_map[i] = result;
+            TRACE("  v%zu = MemorySize -> ir_CALL(__wasm_memory_size)\n", i);
+            break;
+        }
+
+        case Op::MemoryCopy: {
+            ir_ref name_ref = ir_str(ctx, "__wasm_memory_copy");
+            ir_ref func_ref = ir_const_func(ctx, name_ref, IR_UNUSED);
+            ir_ref dest   = value_map[val.operands[0]];
+            ir_ref source = value_map[val.operands[1]];
+            ir_ref size   = value_map[val.operands[2]];
+            ir_CALL_3(IR_VOID, func_ref, dest, source, size);
+            TRACE("  v%zu = MemoryCopy -> ir_CALL_3(__wasm_memory_copy)\n", i);
+            break;
+        }
+        case Op::MemoryFill: {
+            ir_ref name_ref = ir_str(ctx, "__wasm_memory_fill");
+            ir_ref func_ref = ir_const_func(ctx, name_ref, IR_UNUSED);
+            ir_ref dest  = value_map[val.operands[0]];
+            ir_ref value = value_map[val.operands[1]];
+            ir_ref size  = value_map[val.operands[2]];
+            ir_CALL_3(IR_VOID, func_ref, dest, value, size);
+            TRACE("  v%zu = MemoryFill -> ir_CALL_3(__wasm_memory_fill)\n", i);
+            break;
+        }
+
         case Op::Return: {            
             if (val.lhs < 0 || val.lhs >= (int)i) break;
             

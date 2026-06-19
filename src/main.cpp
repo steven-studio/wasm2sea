@@ -7,6 +7,10 @@
 #include <iostream>
 #include <string>
 
+extern "C" {
+#include "ir.h"
+}
+
 static void usage(const char* prog) {
     std::cerr
         << "Usage:\n"
@@ -58,6 +62,14 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
+    std::string baseName = wasmPath;
+    size_t slash = baseName.find_last_of("/\\");
+    if (slash != std::string::npos) baseName = baseName.substr(slash + 1);
+    size_t dot = baseName.find_last_of('.');
+    if (dot != std::string::npos) baseName = baseName.substr(0, dot);
+    std::string irPath = baseName + ".ir";
+    FILE* irFile = fopen(irPath.c_str(), "w");
+
     // ✅ 处理所有函数
     for (size_t i = 0; i < functions.size(); i++) {
         const auto& func = functions[i];
@@ -79,7 +91,12 @@ int main(int argc, char* argv[]) {
         printf("\n");
         // ===================
 
-        ValueIR values = lowerWasmToSsa(code);
+        // 建函數名稱表
+        std::vector<std::string> funcNames;
+        for (const auto& f : functions)
+            funcNames.push_back(f.name);
+
+        ValueIR values = lowerWasmToSsa(code, funcNames);
         dumpValueIR(values);
 
         // Step 2: ValueIR → dstogov/ir
@@ -93,13 +110,15 @@ int main(int argc, char* argv[]) {
         bridge.dump(fn);
 
         // 保存每个函数的 IR
-        std::string irPath = func.name + ".ir";
-        bridge.save(irPath.c_str());
-        std::cout << "Saved IR to: " << irPath << "\n";
+        ir_save(bridge.getCtx(), 0, irFile);
+        std::cout << "Appended IR to: " << irPath << "\n";
 
         // 清理
         delete fn;
     }
+
+    fclose(irFile);
+    std::cout << "Saved IR to: " << irPath << "\n";
     
     // ✅ 移到这里：循环外
     std::cout << "\n" << std::string(70, '=') << "\n";

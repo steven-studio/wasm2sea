@@ -64,6 +64,11 @@ enum class Op {
     // Memory
     Load, Store,
     F64Load, F64Store,
+    Call,      // operands[0..n-1] = args, callee_index stored in lhs
+    Unreachable,
+    MemorySize,  // 新增：memory.size
+    MemoryFill,    // 新增：memory.fill
+    MemoryCopy,    // 新增：memory.copy
     Return
 };
 
@@ -80,6 +85,8 @@ struct Value {
     std::vector<int> operands;
     
     int local_index = -1;  // ✅ 初始化为 -1 表示"未设置"
+
+    std::string callee_name;  // ← 加這行
 
     // 建構函式（可選）
     Value() = default;
@@ -131,6 +138,11 @@ inline std::string opToString(Op op) {  // 改：Op → ValueOp
     case Op::Br: return "Br";
     case Op::Br_if: return "Br_if";
     case Op::Phi: return "Phi";      // 新增
+    case Op::Call:   return "Call";
+    case Op::Unreachable: return "Unreachable";
+    case Op::MemorySize: return "MemorySize";  // 新增
+    case Op::MemoryFill: return "MemoryFill";  // 新增
+    case Op::MemoryCopy: return "MemoryCopy";  // 新增
     case Op::Return: return "Return";
     default:         return "Unknown";
     }

@@ -2,7 +2,8 @@
 #include <unordered_map>
 #include <functional>
 
-ValueIR lowerWasmToSsa(const InstrSeq& code) {
+ValueIR lowerWasmToSsa(const InstrSeq& code,
+                        const std::vector<std::string>& funcNames) {
     ValueIR values;
     std::vector<int> stack;  // 存 SSA id
     std::unordered_map<int, int> localVars;
@@ -294,8 +295,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
                 fprintf(stderr, "Error : Stack underflow at I32Add \n");
                 break;
             }
-            int rhs = stack.back(); stack.pop_back();
-            int lhs = stack.back(); stack.pop_back();
+            int rhs = safePop();
+            int lhs = safePop();
             int id = newValue(Op::Add);
             values[id].lhs = lhs;
             values[id].rhs = rhs;
@@ -304,8 +305,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             break;
         }
         case WasmOp::I32Sub: {
-            int rhs = stack.back(); stack.pop_back();
-            int lhs = stack.back(); stack.pop_back();
+            int rhs = safePop();
+            int lhs = safePop();
             int id = newValue(Op::Sub);
             values[id].lhs = lhs;
             values[id].rhs = rhs;
@@ -317,8 +318,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             break;
         }
         case WasmOp::I32Mul: {
-            int rhs = stack.back(); stack.pop_back();
-            int lhs = stack.back(); stack.pop_back();
+            int rhs = safePop();
+            int lhs = safePop();
             int id = newValue(Op::Mul);
             values[id].lhs = lhs;
             values[id].rhs = rhs;
@@ -326,8 +327,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             break;
         }
         case WasmOp::I32DivS: {
-            int rhs = stack.back(); stack.pop_back();
-            int lhs = stack.back(); stack.pop_back();
+            int rhs = safePop();
+            int lhs = safePop();
             int id = newValue(Op::Div_S);
             values[id].lhs = lhs;
             values[id].rhs = rhs;
@@ -335,8 +336,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             break;
         }
         case WasmOp::I32DivU: {
-            int rhs = stack.back(); stack.pop_back();
-            int lhs = stack.back(); stack.pop_back();
+            int rhs = safePop();
+            int lhs = safePop();
             int id = newValue(Op::Div_U);
             values[id].lhs = lhs;
             values[id].rhs = rhs;
@@ -344,8 +345,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             break;
         }
         case WasmOp::I32RemS: {
-            int rhs = stack.back(); stack.pop_back();
-            int lhs = stack.back(); stack.pop_back();
+            int rhs = safePop();
+            int lhs = safePop();
             int id = newValue(Op::Rem_S);
             values[id].lhs = lhs;
             values[id].rhs = rhs;
@@ -353,8 +354,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             break;
         }
         case WasmOp::I32RemU: {
-            int rhs = stack.back(); stack.pop_back();
-            int lhs = stack.back(); stack.pop_back();
+            int rhs = safePop();
+            int lhs = safePop();
             int id = newValue(Op::Rem_U);
             values[id].lhs = lhs;
             values[id].rhs = rhs;
@@ -364,8 +365,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
 
         // 比較運算（二元，像 Add/Sub 一樣處理）
         case WasmOp::I32Eq: {
-            int rhs = stack.back(); stack.pop_back();
-            int lhs = stack.back(); stack.pop_back();
+            int rhs = safePop();
+            int lhs = safePop();
             int id = newValue(Op::Eq);
             values[id].lhs = lhs;
             values[id].rhs = rhs;
@@ -373,8 +374,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             break;
         }
         case WasmOp::I32Ne: {
-            int rhs = stack.back(); stack.pop_back();
-            int lhs = stack.back(); stack.pop_back();
+            int rhs = safePop();
+            int lhs = safePop();
             int id = newValue(Op::Ne);
             values[id].lhs = lhs;
             values[id].rhs = rhs;
@@ -382,8 +383,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             break;
         }
         case WasmOp::I32LtS: {
-            int rhs = stack.back(); stack.pop_back();
-            int lhs = stack.back(); stack.pop_back();
+            int rhs = safePop();
+            int lhs = safePop();
             int id = newValue(Op::Lt_S);
             values[id].lhs = lhs;
             values[id].rhs = rhs;
@@ -392,8 +393,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
         }
         case WasmOp::I32GtS: {
             if (stack.size() < 2) break;
-            int rhs = stack.back(); stack.pop_back();
-            int lhs = stack.back(); stack.pop_back();
+            int rhs = safePop();
+            int lhs = safePop();
             int id = newValue(Op::Gt_S);
             values[id].lhs = lhs;
             values[id].rhs = rhs;
@@ -406,8 +407,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
         }
 
         case WasmOp::I32And: {
-            int rhs = stack.back(); stack.pop_back();
-            int lhs = stack.back(); stack.pop_back();
+            int rhs = safePop();
+            int lhs = safePop();
             int id = newValue(Op::And);
             values[id].lhs = lhs;
             values[id].rhs = rhs;
@@ -415,8 +416,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             break;
         }
         case WasmOp::I32Or: {
-            int rhs = stack.back(); stack.pop_back();
-            int lhs = stack.back(); stack.pop_back();
+            int rhs = safePop();
+            int lhs = safePop();
             int id = newValue(Op::Or);
             values[id].lhs = lhs;
             values[id].rhs = rhs;
@@ -424,8 +425,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             break;
         }
         case WasmOp::I32Xor: {
-            int rhs = stack.back(); stack.pop_back();
-            int lhs = stack.back(); stack.pop_back();
+            int rhs = safePop();
+            int lhs = safePop();
             int id = newValue(Op::Xor);
             values[id].lhs = lhs;
             values[id].rhs = rhs;
@@ -433,8 +434,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             break;
         }
         case WasmOp::I32Shl: {
-            int rhs = stack.back(); stack.pop_back();
-            int lhs = stack.back(); stack.pop_back();
+            int rhs = safePop();
+            int lhs = safePop();
             int id = newValue(Op::Shl);
             values[id].lhs = lhs;
             values[id].rhs = rhs;
@@ -442,8 +443,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             break;
         }
         case WasmOp::I32ShrS: {
-            int rhs = stack.back(); stack.pop_back();
-            int lhs = stack.back(); stack.pop_back();
+            int rhs = safePop();
+            int lhs = safePop();
             int id = newValue(Op::Shr_S);
             values[id].lhs = lhs;
             values[id].rhs = rhs;
@@ -451,8 +452,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
             break;
         }
         case WasmOp::I32ShrU: {
-            int rhs = stack.back(); stack.pop_back();
-            int lhs = stack.back(); stack.pop_back();
+            int rhs = safePop();
+            int lhs = safePop();
             int id = newValue(Op::Shr_U);
             values[id].lhs = lhs;
             values[id].rhs = rhs;
@@ -462,14 +463,14 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
 
         // Eqz（一元運算，特殊處理）
         case WasmOp::I32Eqz: {
-            int val = stack.back(); stack.pop_back();
+            int val = safePop();
             int id = newValue(Op::Eqz);
             values[id].lhs = val;  // 只有一個操作數
             stack.push_back(id);
             break;
         }
         case WasmOp::I32Clz: {
-            int val = stack.back(); stack.pop_back();
+            int val = safePop();
             int id = newValue(Op::Clz);
             values[id].lhs = val;  // 只有一個操作數
             stack.push_back(id);
@@ -561,6 +562,88 @@ ValueIR lowerWasmToSsa(const InstrSeq& code) {
                 values[br_if_id].rhs = target.loop_start_id;
             }
             break;
+        }
+
+        case WasmOp::Br: {
+            int depth = ins.operand;
+            if (depth >= (int)control_stack.size()) break;
+            
+            ControlFrame& target = control_stack[control_stack.size() - 1 - depth];
+            
+            if (target.type == ControlFrame::Loop) {
+                // 更新 loop phi 回邊（跟 Br_if 一樣）
+                for (auto& [idx, phi_id] : target.loop_phis) {
+                    if (localVars.count(idx)) {
+                        int cur = localVars[idx];
+                        if (cur != phi_id)
+                            values[phi_id].operands.push_back(cur);
+                    }
+                }
+                int br_id = newValue(Op::Br);
+                values[br_id].lhs = target.loop_start_id;
+            } else {
+                // Block/If: 把 stack top 當作 block 的回傳值存起來
+                if (!stack.empty())
+                    target.then_values.push_back(stack.back());
+                int br_id = newValue(Op::Br);
+                values[br_id].lhs = -1;
+            }
+            // Br 之後是 dead code，清空 stack 到 target 的 stack_size
+            stack.resize(target.stack_size);
+            break;
+        }
+
+        case WasmOp::BrTable: {  // br_table
+            if (stack.empty()) break;
+            int idx = safePop();  // table index
+            // 暫時當作 Br depth=0 處理（跳預設目標）
+            int br_id = newValue(Op::Br);
+            values[br_id].lhs = -1;
+            stack.clear();  // dead code
+            break;
+        }
+
+        case WasmOp::Call: {
+            int num_args = (int)ins.foperand;
+            int callee_idx = ins.operand;
+            int id = newValue(Op::Call);
+            values[id].lhs = callee_idx;
+            if (callee_idx >= 0 && callee_idx < (int)funcNames.size())
+                values[id].callee_name = funcNames[callee_idx];
+            std::vector<int> args(num_args);
+            for (int i = num_args - 1; i >= 0; i--) {
+                args[i] = safePop();
+            }
+            values[id].operands = args;
+            stack.push_back(id);  // 先假設有回傳值（void call 用 Drop 處理）
+            break;
+        }
+
+        case WasmOp::Unreachable: {
+            int id = newValue(Op::Unreachable);
+            break;
+        }
+
+        case WasmOp::MemorySize: {
+            int id = newValue(Op::MemorySize);
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::MemoryCopy: {
+            int id = newValue(Op::MemoryCopy);
+            values[id].operands.resize(3);
+            values[id].operands[2] = safePop();  // size
+            values[id].operands[1] = safePop();  // source
+            values[id].operands[0] = safePop();  // dest
+            break;  // void，不 push
+        }
+        case WasmOp::MemoryFill: {
+            int id = newValue(Op::MemoryFill);
+            values[id].operands.resize(3);
+            values[id].operands[2] = safePop();  // size
+            values[id].operands[1] = safePop();  // value
+            values[id].operands[0] = safePop();  // dest
+            break;  // void，不 push
         }
 
         case WasmOp::Return: {
