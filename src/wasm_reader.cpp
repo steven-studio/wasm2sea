@@ -35,6 +35,14 @@ public:
         instructions.push_back({WasmOp::LocalGet, (int)n->index});
     }
 
+    void handleLoad(Load* n) {
+        visitExpression(n->ptr);
+        Instr instr;
+        instr.op = (n->type == Type::f64) ? WasmOp::F64Load : WasmOp::I32Load;
+        instr.operand = (int)n->offset;
+        instructions.push_back(instr);
+    }
+
     void handleConst(Const* n) {
         if (n->type == Type::i32) {
             instructions.push_back({WasmOp::I32Const, n->value.geti32()});
@@ -46,12 +54,13 @@ public:
         }
     }
 
-    void handleLoad(Load* n) {
-        visitExpression(n->ptr);
-        Instr instr;
-        instr.op = (n->type == Type::f64) ? WasmOp::F64Load : WasmOp::I32Load;
-        instr.operand = (int)n->offset;
-        instructions.push_back(instr);
+    void handleLocalSet(LocalSet* n) {
+        visitExpression(n->value);
+        if (n->isTee()) {
+            instructions.push_back({WasmOp::LocalTee, (int)n->index});
+        } else {
+            instructions.push_back({WasmOp::LocalSet, (int)n->index});
+        }
     }
 
     void handleStore(Store* n) {
@@ -77,79 +86,74 @@ public:
         instructions.push_back({op, 0});
     }
 
+    void handleIf(If* n) {
+        visitExpression(n->condition);
+        instructions.push_back({WasmOp::If, 0});
+        visitExpression(n->ifTrue);
+        if (n->ifFalse) {
+            instructions.push_back({WasmOp::Else, 0});
+            visitExpression(n->ifFalse);
+        }
+        instructions.push_back({WasmOp::End, 0});
+    }
+
+    void handleLoop(Loop* n) {
+        label_stack.push_back(n->name);
+        instructions.push_back({WasmOp::Loop, 0});
+        visitExpression(n->body);
+        instructions.push_back({WasmOp::End, 0});
+        label_stack.pop_back();
+    }
+
+    void handleBreak(Break* n) {
+        int depth = getLabelDepth(n->name);
+        if (depth < 0) {
+            fprintf(stderr, "Error: Unknown label in br: %s\n",
+                    std::string(n->name.str).c_str());
+            return;
+        }
+        if (n->condition) {
+            visitExpression(n->condition);
+            instructions.push_back({WasmOp::Br_if, depth});
+        } else {
+            instructions.push_back({WasmOp::Br, depth});
+        }
+    }
+
+    void handleBlock(Block* n) {
+        if (n->name.is()) label_stack.push_back(n->name);
+        for (auto* expr : n->list) {
+            visitExpression(expr);
+        }
+        if (n->name.is()) label_stack.pop_back();
+    }
+
+    void handleReturn(Return* n) {
+        if (n->value) visitExpression(n->value);
+        instructions.push_back({WasmOp::Return, 0});
+    }
+
     void visitExpression(Expression* curr) {
         // 手动控制遍历顺序
         if (!curr) return;
+
+        // 讀
         if      (auto* n = curr->dynCast<LocalGet>()) handleLocalGet(n);
-        else if (auto* n = curr->dynCast<Const>())    handleConst(n);
         else if (auto* n = curr->dynCast<Load>())     handleLoad(n);
+        else if (auto* n = curr->dynCast<Const>())    handleConst(n);
+
+        // 寫
+        else if (auto* n = curr->dynCast<LocalSet>()) handleLocalSet(n);
         else if (auto* n = curr->dynCast<Store>())    handleStore(n);
+
+        // 運算
         else if (auto* n = curr->dynCast<Binary>())   handleBinary(n);
-        else if (auto* n = curr->dynCast<Unary>()) handleUnary(n);
-        else if (auto* ifExpr = curr->dynCast<If>()) {
-            // 先访问条件
-            visitExpression(ifExpr->condition);
-            
-            // If 指令
-            instructions.push_back({WasmOp::If, 0});
-            
-            // Then 分支
-            visitExpression(ifExpr->ifTrue);
-            
-            // Else 分支
-            if (ifExpr->ifFalse) {
-                instructions.push_back({WasmOp::Else, 0});
-                visitExpression(ifExpr->ifFalse);
-            }
-            
-            // End
-            instructions.push_back({WasmOp::End, 0});
-        }
-        else if (auto* loop = curr->dynCast<Loop>()) {
-            label_stack.push_back(loop->name);  // 压入标签
-            instructions.push_back({WasmOp::Loop, 0});
-            visitExpression(loop->body);
-            instructions.push_back({WasmOp::End, 0});
-            label_stack.pop_back();  // 弹出标签
-        }
-        else if (auto* br = curr->dynCast<Break>()) {
-            int depth = getLabelDepth(br->name);
-            if (depth < 0) {
-                fprintf(stderr, "Error: Unknown label in br: %s\n", 
-                        std::string(br->name.str).c_str());
-                return;
-            }
-            
-            if (br->condition) {
-                // br_if: 先计算条件
-                visitExpression(br->condition);
-                instructions.push_back({WasmOp::Br_if, depth});  // 使用深度
-            } else {
-                // br: 无条件跳转
-                instructions.push_back({WasmOp::Br, depth});  // 使用深度
-            }
-        }
-        else if (auto* block = curr->dynCast<Block>()) {
-            if (block->name.is()) label_stack.push_back(block->name);
-            for (auto* expr : block->list) {
-                visitExpression(expr);
-            }
-            if (block->name.is()) label_stack.pop_back();
-        }
-        else if (auto* ret = curr->dynCast<Return>()) {
-            if (ret->value) {
-                visitExpression(ret->value);
-            }
-            instructions.push_back({WasmOp::Return, 0});
-        }
-        else if (auto* localSet = curr->dynCast<LocalSet>()) {
-            visitExpression(localSet->value);
-            if (localSet->isTee()) {
-                instructions.push_back({WasmOp::LocalTee, (int)localSet->index});
-            } else {
-                instructions.push_back({WasmOp::LocalSet, (int)localSet->index});
-            }
-        }
+        else if (auto* n = curr->dynCast<Unary>())    handleUnary(n);
+        else if (auto* n = curr->dynCast<If>())       handleIf(n);
+        else if (auto* n = curr->dynCast<Loop>())     handleLoop(n);
+        else if (auto* n = curr->dynCast<Break>())   handleBreak(n);
+        else if (auto* n = curr->dynCast<Block>())    handleBlock(n);
+        else if (auto* n = curr->dynCast<Return>()) handleReturn(n);
         else if (auto* globalGet = curr->dynCast<GlobalGet>()) {
             // 找 global 的 index
             auto& globals = modulePtr->globals;
