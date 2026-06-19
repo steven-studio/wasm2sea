@@ -103,6 +103,13 @@ public:
         instructions.push_back({op, 0});
     }
 
+    void handleSelect(Select* n) {
+        visitExpression(n->ifFalse);
+        visitExpression(n->ifTrue);
+        visitExpression(n->condition);
+        instructions.push_back({WasmOp::Select, 0});
+    }
+
     void handleIf(If* n) {
         visitExpression(n->condition);
         instructions.push_back({WasmOp::If, 0});
@@ -168,17 +175,12 @@ public:
         // 運算
         else if (auto* n = curr->dynCast<Binary>())   handleBinary(n);
         else if (auto* n = curr->dynCast<Unary>())    handleUnary(n);
+        else if (auto* n = curr->dynCast<Select>())    handleSelect(n);
         else if (auto* n = curr->dynCast<If>())       handleIf(n);
         else if (auto* n = curr->dynCast<Loop>())     handleLoop(n);
         else if (auto* n = curr->dynCast<Break>())   handleBreak(n);
         else if (auto* n = curr->dynCast<Block>())    handleBlock(n);
         else if (auto* n = curr->dynCast<Return>()) handleReturn(n);
-        else if (auto* select = curr->dynCast<Select>()) {
-            visitExpression(select->ifFalse);
-            visitExpression(select->ifTrue);
-            visitExpression(select->condition);
-            instructions.push_back({WasmOp::Select, 0});
-        }
         else if (curr->is<wasm::Drop>()) {
             visitExpression(curr->cast<wasm::Drop>()->value);
             instructions.push_back({WasmOp::Drop, 0});
