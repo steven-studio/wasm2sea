@@ -30,115 +30,62 @@ public:
         return -1;  // 未找到
     }
 
+    // 每個 node type 變成獨立 private method
+    void handleLocalGet(LocalGet* n) {
+        instructions.push_back({WasmOp::LocalGet, (int)n->index});
+    }
+
+    void handleConst(Const* n) {
+        if (n->type == Type::i32) {
+            instructions.push_back({WasmOp::I32Const, n->value.geti32()});
+        } else if (n->type == Type::f64) {
+            Instr instr;
+            instr.op = WasmOp::F64Const;
+            instr.foperand = n->value.getf64();
+            instructions.push_back(instr);
+        }
+    }
+
+    void handleLoad(Load* n) {
+        visitExpression(n->ptr);
+        Instr instr;
+        instr.op = (n->type == Type::f64) ? WasmOp::F64Load : WasmOp::I32Load;
+        instr.operand = (int)n->offset;
+        instructions.push_back(instr);
+    }
+
+    void handleStore(Store* n) {
+        visitExpression(n->ptr);
+        visitExpression(n->value);
+        Instr instr;
+        instr.op = (n->valueType == Type::f64) ? WasmOp::F64Store : WasmOp::I32Store;
+        instr.operand = (int)n->offset;
+        instructions.push_back(instr);
+    }
+
+    void handleBinary(Binary* n) {
+        visitExpression(n->left);
+        visitExpression(n->right);
+        instructions.push_back({binaryOpToWasmOp(n->op), 0});
+    }
+
+    void handleUnary(Unary* n) {
+        visitExpression(n->value);
+        WasmOp op = unaryOpToWasmOp(n->op);
+        if (op == WasmOp::Unsupported)
+            fprintf(stderr, "Warning: Unsupported unary op: %d\n", n->op);
+        instructions.push_back({op, 0});
+    }
+
     void visitExpression(Expression* curr) {
         // 手动控制遍历顺序
         if (!curr) return;
-        if (auto* localGet = curr->dynCast<LocalGet>()) {
-            instructions.push_back({WasmOp::LocalGet, (int)localGet->index});
-        }
-        else if (auto* cnst = curr->dynCast<Const>()) {
-            if (cnst->type == Type::i32) {
-                instructions.push_back({WasmOp::I32Const, cnst->value.geti32()});
-            } else if (cnst->type == Type::f64) {
-                Instr instr;
-                instr.op = WasmOp::F64Const;
-                instr.foperand = cnst->value.getf64();
-                instructions.push_back(instr);
-            }
-        }
-        else if (auto* load = curr->dynCast<Load>()) {
-            visitExpression(load->ptr);
-            Instr instr;
-            if (load->type == Type::f64) {
-                instr.op = WasmOp::F64Load;
-            } else {
-                instr.op = WasmOp::I32Load;
-            }
-            instr.operand = (int)load->offset;
-            instructions.push_back(instr);
-        }
-        else if (auto* store = curr->dynCast<Store>()) {
-            visitExpression(store->ptr);
-            visitExpression(store->value);
-            Instr instr;
-            if (store->valueType == Type::f64) {
-                instr.op = WasmOp::F64Store;
-            } else {
-                instr.op = WasmOp::I32Store;
-            }
-            instr.operand = (int)store->offset;
-            instructions.push_back(instr);
-        }
-        else if (auto* bin = curr->dynCast<Binary>()) {
-            // 后序遍历：先左后右再操作符
-            visitExpression(bin->left);
-            visitExpression(bin->right);
-            
-            switch (bin->op) {
-            // 算术运算
-            case AddInt32: instructions.push_back({WasmOp::I32Add, 0}); break;
-            case SubInt32: instructions.push_back({WasmOp::I32Sub, 0}); break;
-            case MulInt32: instructions.push_back({WasmOp::I32Mul, 0}); break;
-            case DivSInt32: instructions.push_back({WasmOp::I32DivS, 0}); break;
-            case DivUInt32: instructions.push_back({WasmOp::I32DivU, 0}); break;
-            case RemSInt32: instructions.push_back({WasmOp::I32RemS, 0}); break;
-            case RemUInt32: instructions.push_back({WasmOp::I32RemU, 0}); break;
-            
-            // 比较运算
-            case EqInt32: instructions.push_back({WasmOp::I32Eq, 0}); break;
-            case NeInt32: instructions.push_back({WasmOp::I32Ne, 0}); break;
-            case LtSInt32: instructions.push_back({WasmOp::I32LtS, 0}); break;
-            case LtUInt32: instructions.push_back({WasmOp::I32LtU, 0}); break;
-            case GtSInt32: instructions.push_back({WasmOp::I32GtS, 0}); break;
-            case GtUInt32: instructions.push_back({WasmOp::I32GtU, 0}); break;
-            case LeSInt32: instructions.push_back({WasmOp::I32LeS, 0}); break;
-            case LeUInt32: instructions.push_back({WasmOp::I32LeU, 0}); break;
-            case GeSInt32: instructions.push_back({WasmOp::I32GeS, 0}); break;
-            case GeUInt32: instructions.push_back({WasmOp::I32GeU, 0}); break;
-            
-            // 位运算
-            case AndInt32: instructions.push_back({WasmOp::I32And, 0}); break;
-            case OrInt32: instructions.push_back({WasmOp::I32Or, 0}); break;
-            case XorInt32: instructions.push_back({WasmOp::I32Xor, 0}); break;
-            case ShlInt32: instructions.push_back({WasmOp::I32Shl, 0}); break;
-            case ShrSInt32: instructions.push_back({WasmOp::I32ShrS, 0}); break;
-            case ShrUInt32: instructions.push_back({WasmOp::I32ShrU, 0}); break;
-            case AddFloat64: instructions.push_back({WasmOp::F64Add, 0}); break;
-            case SubFloat64: instructions.push_back({WasmOp::F64Sub, 0}); break;
-            case MulFloat64: instructions.push_back({WasmOp::F64Mul, 0}); break;
-            case DivFloat64: instructions.push_back({WasmOp::F64Div, 0}); break;
-            case EqFloat64:  instructions.push_back({WasmOp::F64Eq,  0}); break;
-            case NeFloat64:  instructions.push_back({WasmOp::F64Ne,  0}); break;
-            case LtFloat64:  instructions.push_back({WasmOp::F64Lt,  0}); break;
-            case GtFloat64:  instructions.push_back({WasmOp::F64Gt,  0}); break;
-            case LeFloat64:  instructions.push_back({WasmOp::F64Le,  0}); break;
-            case GeFloat64:  instructions.push_back({WasmOp::F64Ge,  0}); break;
-            case MinFloat64: instructions.push_back({WasmOp::F64Min, 0}); break;
-            case MaxFloat64: instructions.push_back({WasmOp::F64Max, 0}); break;
-            default:
-                fprintf(stderr, "Warning: Unsupported binary op: %d\n", bin->op);
-                break;
-            }
-        }
-        else if (auto* unary = curr->dynCast<Unary>()) {
-            visitExpression(unary->value);
-            switch (unary->op) {
-            case EqZInt32: instructions.push_back({WasmOp::I32Eqz, 0}); break;
-            case ClzInt32: instructions.push_back({WasmOp::I32Clz, 0}); break;
-            case CtzInt32: instructions.push_back({WasmOp::I32Ctz, 0}); break;
-            case PopcntInt32: instructions.push_back({WasmOp::I32Popcnt, 0}); break;
-            case AbsFloat64:  instructions.push_back({WasmOp::F64Abs,  0}); break;
-            case NegFloat64:  instructions.push_back({WasmOp::F64Neg,  0}); break;
-            case SqrtFloat64: instructions.push_back({WasmOp::F64Sqrt, 0}); break;
-            case ConvertSInt32ToFloat64: instructions.push_back({WasmOp::F64ConvertI32S, 0}); break;
-            case ConvertUInt32ToFloat64: instructions.push_back({WasmOp::F64ConvertI32U, 0}); break;
-            case TruncSFloat64ToInt32:   instructions.push_back({WasmOp::I32TruncF64S, 0}); break;
-            case TruncUFloat64ToInt32:   instructions.push_back({WasmOp::I32TruncF64U, 0}); break;
-            default:
-                fprintf(stderr, "Warning: Unsupported unary op: %d\n", unary->op);
-                break;
-            }
-        }
+        if      (auto* n = curr->dynCast<LocalGet>()) handleLocalGet(n);
+        else if (auto* n = curr->dynCast<Const>())    handleConst(n);
+        else if (auto* n = curr->dynCast<Load>())     handleLoad(n);
+        else if (auto* n = curr->dynCast<Store>())    handleStore(n);
+        else if (auto* n = curr->dynCast<Binary>())   handleBinary(n);
+        else if (auto* n = curr->dynCast<Unary>()) handleUnary(n);
         else if (auto* ifExpr = curr->dynCast<If>()) {
             // 先访问条件
             visitExpression(ifExpr->condition);
@@ -285,6 +232,80 @@ public:
             std::cerr << "[WARN] Unsupported expression type: " 
                     << wasm::getExpressionName(curr) << "\n";
             instructions.push_back({WasmOp::Unsupported, 0});
+        }
+    }
+
+    static WasmOp binaryOpToWasmOp(BinaryOp op) {
+        switch (op) {
+            // i32 算術
+            case AddInt32:   return WasmOp::I32Add;
+            case SubInt32:   return WasmOp::I32Sub;
+            case MulInt32:   return WasmOp::I32Mul;
+            case DivSInt32:  return WasmOp::I32DivS;
+            case DivUInt32:  return WasmOp::I32DivU;
+            case RemSInt32:  return WasmOp::I32RemS;
+            case RemUInt32:  return WasmOp::I32RemU;
+
+            // i32 比較
+            case EqInt32:    return WasmOp::I32Eq;
+            case NeInt32:    return WasmOp::I32Ne;
+            case LtSInt32:   return WasmOp::I32LtS;
+            case LtUInt32:   return WasmOp::I32LtU;
+            case GtSInt32:   return WasmOp::I32GtS;
+            case GtUInt32:   return WasmOp::I32GtU;
+            case LeSInt32:   return WasmOp::I32LeS;
+            case LeUInt32:   return WasmOp::I32LeU;
+            case GeSInt32:   return WasmOp::I32GeS;
+            case GeUInt32:   return WasmOp::I32GeU;
+
+            // i32 位元
+            case AndInt32:   return WasmOp::I32And;
+            case OrInt32:    return WasmOp::I32Or;
+            case XorInt32:   return WasmOp::I32Xor;
+            case ShlInt32:   return WasmOp::I32Shl;
+            case ShrSInt32:  return WasmOp::I32ShrS;
+            case ShrUInt32:  return WasmOp::I32ShrU;
+
+            // f64 算術
+            case AddFloat64: return WasmOp::F64Add;
+            case SubFloat64: return WasmOp::F64Sub;
+            case MulFloat64: return WasmOp::F64Mul;
+            case DivFloat64: return WasmOp::F64Div;
+            case EqFloat64:  return WasmOp::F64Eq;
+            case NeFloat64:  return WasmOp::F64Ne;
+
+            // f64 比較
+            case LtFloat64:  return WasmOp::F64Lt;
+            case GtFloat64:  return WasmOp::F64Gt;
+            case LeFloat64:  return WasmOp::F64Le;
+            case GeFloat64:  return WasmOp::F64Ge;
+            case MinFloat64: return WasmOp::F64Min;
+            case MaxFloat64: return WasmOp::F64Max;
+
+            default: return WasmOp::Unsupported;
+        }
+    }
+
+    static WasmOp unaryOpToWasmOp(UnaryOp op) {
+        switch (op) {
+            // i32
+            case EqZInt32:   return WasmOp::I32Eqz;
+            case ClzInt32:   return WasmOp::I32Clz;
+            case CtzInt32:   return WasmOp::I32Ctz;
+            case PopcntInt32: return WasmOp::I32Popcnt;
+
+            // f64 算術
+            case AbsFloat64:  return WasmOp::F64Abs;
+            case NegFloat64:  return WasmOp::F64Neg;
+            case SqrtFloat64: return WasmOp::F64Sqrt;
+
+            // 型別轉換
+            case ConvertSInt32ToFloat64: return WasmOp::F64ConvertI32S;
+            case ConvertUInt32ToFloat64: return WasmOp::F64ConvertI32U;
+            case TruncSFloat64ToInt32:   return WasmOp::I32TruncF64S;
+            case TruncUFloat64ToInt32:   return WasmOp::I32TruncF64U;
+
+            default: return WasmOp::Unsupported;
         }
     }
 };
