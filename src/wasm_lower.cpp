@@ -50,6 +50,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
         int loop_start_id;                        // 循环开始的 value id
         std::unordered_map<int, int> loop_phis;   // local_index -> phi_value_id
         
+        bool has_else = false;  // ✅ 新增：标记是否有 else 分支
+
         // ✅ 新增：If 专用 - 保存 if 开始时的局部变量
         std::unordered_map<int, int> entry_locals;  // if 入口時的局部變量
         std::unordered_map<int, int> then_locals;   // ← 新增：then 结束时
@@ -131,6 +133,7 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
             
             // ✅ 保存 then 分支结束时的 locals
             control_stack.back().then_locals = localVars;
+            control_stack.back().has_else = true;  // 标记有 else 分支
 
             // 记录 then 分支的结果
             if (stack.size() > control_stack.back().stack_size) {
@@ -154,6 +157,11 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
         case WasmOp::End: {
             if (control_stack.empty()) break;
             
+            // no-else 情況：then_locals 還沒設過，現在設
+            if (control_stack.back().type == ControlFrame::If && 
+                !control_stack.back().has_else) {
+                control_stack.back().then_locals = localVars;
+            }
             ControlFrame frame = control_stack.back();
             control_stack.pop_back();
             
@@ -198,10 +206,43 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
                     sprintf(buf, "v%d = End", end_id);
                 }
                 
-                // TODO: 合并 locals 的 Phi（下一步再做）
-                
+                // 合併被修改的 locals
+                if (frame.has_else) {
+                    // if-else：兩個分支都可能改 local
+                    for (auto& [idx, then_val] : frame.then_locals) {
+                        auto else_it = frame.else_locals.find(idx);
+                        auto entry_it = frame.entry_locals.find(idx);
+                        int else_val = (else_it != frame.else_locals.end()) 
+                            ? else_it->second 
+                            : (entry_it != frame.entry_locals.end() ? entry_it->second : then_val);
+                        if (then_val != else_val) {
+                            int phi_id = newValue(Op::Phi);
+                            values[phi_id].local_index = -1;
+                            values[phi_id].operands = {then_val, else_val};
+                            localVars[idx] = phi_id;
+                        }
+                    }
+                } else {
+                    // no-else：then 改的 local 要跟 entry 值合併
+                    for (auto& [idx, then_val] : frame.then_locals) {
+                        auto entry_it = frame.entry_locals.find(idx);
+                        if (entry_it != frame.entry_locals.end() && entry_it->second != then_val) {
+                            int phi_id = newValue(Op::Phi);
+                            values[phi_id].local_index = -1;
+                            values[phi_id].operands = {then_val, entry_it->second};
+                            localVars[idx] = phi_id;
+                        }
+                    }
+                }
+
                 printState("End", buf);
             }
+
+            fprintf(stderr, "[END] localVars after:\n");
+            for (auto& [idx, vid] : localVars) {
+                fprintf(stderr, "  local_%d = v%d\n", idx, vid);
+            }
+
             break;
         }
 

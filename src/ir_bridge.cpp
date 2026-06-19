@@ -66,6 +66,8 @@ IRFunction* IRBridge::build(const ValueIR& values) {
     TRACE("Total ValueIR entries: %zu\n\n", values.size());
     // ===== 结束 =====
 
+    while (!if_stack.empty()) if_stack.pop();
+    while (!loop_stack.empty()) loop_stack.pop();
     ir_init(ctx_, IR_FUNCTION, 128, 128);
     
     // 開始建構 IR
@@ -139,7 +141,12 @@ IRFunction* IRBridge::build(const ValueIR& values) {
 
         // 跳过已经处理的参数
         if (val.op == Op::Param) {
-            TRACE("  Skipped (already processed)\n\n");
+            // 找到這個 paramIndex 對應的 ir_ref
+            auto it = param_index_to_value_id.find(val.paramIndex);
+            if (it != param_index_to_value_id.end()) {
+                // 用已經建好的 ir_ref
+                value_map[i] = value_map[it->second];
+            }
             continue;
         }
                 
@@ -697,6 +704,7 @@ IRFunction* IRBridge::build(const ValueIR& values) {
         }
 
         case Op::End: {
+            fprintf(stderr, "DEBUG: Op::End reached, if_stack.size()=%zu\n", if_stack.size());
             if (if_stack.empty()) {
                 // 可能是 loop 的 end，這裡先忽略
                 // TRACE("  v%zu = End (loop or block end)\n\n", i);
@@ -719,8 +727,10 @@ IRFunction* IRBridge::build(const ValueIR& values) {
                     info.end_true, end_false);
             } else {
                 // 沒有 else 分支（true 分支 Return 終止，進入空的 false 分支）
+                ir_ref end_true = ir_END();
                 ir_IF_FALSE(info.if_node);
-                TRACE("    ir_IF_FALSE\n");
+                ir_ref end_false = ir_END();
+                ir_MERGE_2(end_true, end_false);
             }
             
             TRACE("\n");

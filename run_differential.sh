@@ -11,6 +11,15 @@ TESTS=(
   "local_read_write_read 7"
   "local_tee_overwrite 0"
   "local_swap 3 5"
+  "if_else 5 3"
+  "if_else 3 5"
+  "if_no_else 1"
+  "if_no_else 0"
+  "if_complex 7 3"
+  "if_complex 3 7"
+  "if_nested 3 4"
+  "if_nested 3 -1"
+  "if_nested -1 4"
 )
 
 PASS=0

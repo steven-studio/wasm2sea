@@ -1,0 +1,15 @@
+(module
+  (func $test (export "test") (param i32 i32) (result i32)
+    (if (result i32)
+      (i32.gt_s (local.get 0) (i32.const 0))
+      (then
+        (if (result i32)
+          (i32.gt_s (local.get 1) (i32.const 0))
+          (then (i32.add (local.get 0) (local.get 1)))
+          (else (local.get 0))
+        )
+      )
+      (else (i32.const 0))
+    )
+  )
+)
