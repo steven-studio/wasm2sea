@@ -35,6 +35,23 @@ public:
         instructions.push_back({WasmOp::LocalGet, (int)n->index});
     }
 
+    int getGlobalIndex(Name name) {
+        auto& globals = modulePtr->globals;
+        for (int i = 0; i < (int)globals.size(); i++) {
+            if (globals[i]->name == name) return i;
+        }
+        return -1;
+    }
+
+    void handleGlobalGet(GlobalGet* n) {
+        instructions.push_back({WasmOp::GlobalGet, getGlobalIndex(n->name)});
+    }
+
+    void handleGlobalSet(GlobalSet* n) {
+        visitExpression(n->value);
+        instructions.push_back({WasmOp::GlobalSet, getGlobalIndex(n->name)});
+    }
+
     void handleLoad(Load* n) {
         visitExpression(n->ptr);
         Instr instr;
@@ -139,11 +156,13 @@ public:
 
         // 讀
         if      (auto* n = curr->dynCast<LocalGet>()) handleLocalGet(n);
+        else if (auto* n = curr->dynCast<GlobalGet>()) handleGlobalGet(n);
         else if (auto* n = curr->dynCast<Load>())     handleLoad(n);
         else if (auto* n = curr->dynCast<Const>())    handleConst(n);
 
         // 寫
         else if (auto* n = curr->dynCast<LocalSet>()) handleLocalSet(n);
+        else if (auto* n = curr->dynCast<GlobalSet>()) handleGlobalSet(n);
         else if (auto* n = curr->dynCast<Store>())    handleStore(n);
 
         // 運算
@@ -154,26 +173,6 @@ public:
         else if (auto* n = curr->dynCast<Break>())   handleBreak(n);
         else if (auto* n = curr->dynCast<Block>())    handleBlock(n);
         else if (auto* n = curr->dynCast<Return>()) handleReturn(n);
-        else if (auto* globalGet = curr->dynCast<GlobalGet>()) {
-            // 找 global 的 index
-            auto& globals = modulePtr->globals;
-            int idx = 0;
-            for (auto& g : globals) {
-                if (g->name == globalGet->name) break;
-                idx++;
-            }
-            instructions.push_back({WasmOp::GlobalGet, idx});
-        }
-        else if (auto* globalSet = curr->dynCast<GlobalSet>()) {
-            visitExpression(globalSet->value);
-            auto& globals = modulePtr->globals;
-            int idx = 0;
-            for (auto& g : globals) {
-                if (g->name == globalSet->name) break;
-                idx++;
-            }
-            instructions.push_back({WasmOp::GlobalSet, idx});
-        }
         else if (auto* select = curr->dynCast<Select>()) {
             visitExpression(select->ifFalse);
             visitExpression(select->ifTrue);
