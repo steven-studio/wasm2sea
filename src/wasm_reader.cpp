@@ -187,6 +187,28 @@ public:
         instructions.push_back({WasmOp::Return, 0});
     }
 
+    void handleUnreachable() {
+        instructions.push_back({WasmOp::Unreachable, 0});
+    }
+
+    void handleMemorySize() {
+        instructions.push_back({WasmOp::MemorySize, 0});
+    }
+
+    void handleMemoryCopy(MemoryCopy* n) {
+        visitExpression(n->dest);
+        visitExpression(n->source);
+        visitExpression(n->size);
+        instructions.push_back({WasmOp::MemoryCopy, 0});
+    }
+
+    void handleMemoryFill(MemoryFill* n) {
+        visitExpression(n->dest);
+        visitExpression(n->value);
+        visitExpression(n->size);
+        instructions.push_back({WasmOp::MemoryFill, 0});
+    }
+
     void visitExpression(Expression* curr) {
         // 手动控制遍历顺序
         if (!curr) return;
@@ -217,26 +239,12 @@ public:
         else if (auto* n = curr->dynCast<Block>())    handleBlock(n);
         else if (auto* n = curr->dynCast<Return>()) handleReturn(n);
         else if (auto* n = curr->dynCast<Drop>())      handleDrop(n);
-        else if (curr->is<wasm::Unreachable>()) {
-            instructions.push_back({WasmOp::Unreachable, 0});
-        }
-        else if (curr->is<wasm::MemorySize>()) {
-            instructions.push_back({WasmOp::MemorySize, 0});
-        }
-        else if (curr->is<wasm::MemoryCopy>()) {
-            auto* mc = curr->cast<wasm::MemoryCopy>();
-            visitExpression(mc->dest);
-            visitExpression(mc->source);
-            visitExpression(mc->size);
-            instructions.push_back({WasmOp::MemoryCopy, 0});
-        }
-        else if (curr->is<wasm::MemoryFill>()) {
-            auto* mf = curr->cast<wasm::MemoryFill>();
-            visitExpression(mf->dest);
-            visitExpression(mf->value);
-            visitExpression(mf->size);
-            instructions.push_back({WasmOp::MemoryFill, 0});
-        }
+        
+        // Memory
+        else if (curr->is<wasm::Unreachable>())   handleUnreachable();
+        else if (curr->is<wasm::MemorySize>())    handleMemorySize();
+        else if (auto* n = curr->dynCast<wasm::MemoryCopy>()) handleMemoryCopy(n);
+        else if (auto* n = curr->dynCast<wasm::MemoryFill>()) handleMemoryFill(n);
         else {
             // Unsupported instruction, skip
             std::cerr << "[WARN] Unsupported expression type: " 
