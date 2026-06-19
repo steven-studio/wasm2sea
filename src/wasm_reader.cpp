@@ -115,6 +115,24 @@ public:
         instructions.push_back({WasmOp::Drop, 0});
     }
 
+    int getFunctionIndex(Name name) {
+        for (int i = 0; i < (int)modulePtr->functions.size(); i++) {
+            if (modulePtr->functions[i]->name == name) return i;
+        }
+        return -1;
+    }
+
+    void handleCall(Call* n) {
+        for (auto* operand : n->operands) {
+            visitExpression(operand);
+        }
+        Instr instr;
+        instr.op = WasmOp::Call;
+        instr.operand = getFunctionIndex(n->target);
+        instr.foperand = (double)n->operands.size();
+        instructions.push_back(instr);
+    }
+
     void handleIf(If* n) {
         visitExpression(n->condition);
         instructions.push_back({WasmOp::If, 0});
@@ -182,6 +200,7 @@ public:
         else if (auto* n = curr->dynCast<Unary>())    handleUnary(n);
         else if (auto* n = curr->dynCast<Select>())    handleSelect(n);
         else if (auto* n = curr->dynCast<Drop>())      handleDrop(n);
+        else if (auto* n = curr->dynCast<Call>())      handleCall(n);
 
         // 控制流
         else if (auto* n = curr->dynCast<If>())       handleIf(n);
@@ -190,25 +209,6 @@ public:
         else if (auto* n = curr->dynCast<Block>())    handleBlock(n);
         else if (auto* n = curr->dynCast<Return>()) handleReturn(n);
         else if (auto* n = curr->dynCast<Drop>())      handleDrop(n);
-        else if (auto* call = curr->dynCast<wasm::Call>()) {
-            // 先 visit 所有參數（push 到 stack）
-            for (auto* operand : call->operands) {
-                visitExpression(operand);
-            }
-            // 找 callee 的 function index
-            int calleeIdx = -1;
-            for (int i = 0; i < (int)modulePtr->functions.size(); i++) {
-                if (modulePtr->functions[i]->name == call->target) {
-                    calleeIdx = i;
-                    break;
-                }
-            }
-            Instr instr;
-            instr.op = WasmOp::Call;
-            instr.operand = calleeIdx;
-            instr.foperand = (double)call->operands.size();
-            instructions.push_back(instr);
-        }
         else if (auto* sw = curr->dynCast<Switch>()) {
             // 先計算 index
             visitExpression(sw->condition);
