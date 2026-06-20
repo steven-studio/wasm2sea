@@ -28,6 +28,13 @@ TESTS=(
   "if_early_return 0"
   "if_eqz 0"
   "if_eqz 1"
+  "factorial 1"
+  "factorial 5"
+  "factorial 10"
+  "fibonacci 1"
+  "fibonacci 7"
+  "fibonacci 10"
+  "fibonacci 15"
 )
 
 PASS=0

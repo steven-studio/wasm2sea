@@ -547,6 +547,15 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
             frame.type = ControlFrame::Loop;
             frame.loop_start_id = loop_id;
             frame.stack_size = stack.size();
+
+            // 確保所有參數都在 localVars 裡
+            for (int i = 0; i < (int)numParams; i++) {
+                if (localVars.find(i) == localVars.end()) {
+                    int id = newValue(Op::Param);
+                    values[id].paramIndex = i;
+                    localVars[i] = id;
+                }
+            }
             
             // 暂时不创建 Phi，等到循环结束时再根据实际情况创建
             // 只记录循环开始时的局部变量值
