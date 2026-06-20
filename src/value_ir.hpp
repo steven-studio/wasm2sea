@@ -5,7 +5,7 @@
 
 enum class Op {
     Param,     // 對應 local.get
-    Const,     // 對應 i32.const
+    I32Const,     // 對應 i32.const
     Add,       // 對應 i32.add
     Sub,       // 對應 i32.sub
     Mul,       // 對應 i32.mul
@@ -77,7 +77,7 @@ struct Value {
     Op op;     // 改：Op → ValueOp
 
     int paramIndex = -1;  // for Param
-    int constValue = 0;   // for Const
+    int constValue = 0;   // for I32Const
     int lhs = -1;         // 對 binary op / Return 使用
     int rhs = -1;         // for binary op
 
@@ -97,7 +97,7 @@ using ValueIR = std::vector<Value>;  // 改：Value → ValueDef
 inline std::string opToString(Op op) {  // 改：Op → ValueOp
     switch (op) {
     case Op::Param:  return "Param";    // 改：Op:: → ValueOp::
-    case Op::Const:  return "Const";    // 改：Op:: → ValueOp::
+    case Op::I32Const:  return "I32Const";    // 改：Op:: → ValueOp::
     case Op::Add:    return "Add";      // 改：Op:: → ValueOp::
     case Op::Sub:    return "Sub";      // 改：Op:: → ValueOp::
     case Op::Mul:    return "Mul";      // 改：Op:: → ValueOp::

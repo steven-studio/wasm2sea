@@ -9,7 +9,7 @@ void dumpValueIR(const ValueIR& values) {
         case Op::Param:
             std::cout << "(" << v.paramIndex << ")";
             break;
-        case Op::Const:
+        case Op::I32Const:
             std::cout << "(" << v.constValue << ")";
             break;
         case Op::Add:

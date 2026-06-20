@@ -28,7 +28,7 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
 
     auto safePop = [&]() -> int {
         if (stack.empty()) {
-            int id = newValue(Op::Const);
+            int id = newValue(Op::I32Const);
             values[id].constValue = 0;
             return id;
         }
@@ -275,7 +275,7 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
                     );
                 } else {
                     // 是未初始化的局部变量，默认为 0
-                    int id = newValue(Op::Const);
+                    int id = newValue(Op::I32Const);
                     values[id].constValue = 0;
                     localVars[ins.operand] = id;
                     stack.push_back(id);
@@ -325,7 +325,7 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
         }
 
         case WasmOp::I32Const: {
-            int id = newValue(Op::Const);
+            int id = newValue(Op::I32Const);
             values[id].constValue = ins.operand;
             stack.push_back(id);
             printState("I32Const(" + std::to_string(ins.operand) + ")");
@@ -732,8 +732,9 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
 
         case WasmOp::F64Const: {
             int id = newValue(Op::F64Const);
-            values[id].constValue = 0;  // 先用 0，之後再加 foperand
+            values[id].constValue = ins.foperand;
             stack.push_back(id);
+            printState("F64Const(" + std::to_string(ins.foperand) + ")");
             break;
         }
 
@@ -784,7 +785,7 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
 
         case WasmOp::Unsupported: {
             // Push dummy value so stack doesn't underflow
-            int id = newValue(Op::Const);
+            int id = newValue(Op::I32Const);
             values[id].constValue = 0;
             stack.push_back(id);
             break;

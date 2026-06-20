@@ -595,7 +595,7 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             break;
         }
         
-        case Op::Const: {
+        case Op::I32Const: {
             ir_ref c = ir_CONST_I32(val.constValue);
             TRACE(" v%zu = Const(%d) -> ir_CONST_I32(%d) = ref %d (literal)\n",
             i, val.constValue, val.constValue, c);

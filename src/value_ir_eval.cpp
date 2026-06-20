@@ -8,7 +8,7 @@ int evalValueIR(const ValueIR& ir, const std::vector<int>& params) {
         case Op::Param:
             vals[v.id] = params.at(v.paramIndex);
             break;
-        case Op::Const:
+        case Op::I32Const:
             vals[v.id] = v.constValue;
             break;
         case Op::Add:
