@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <cstdint>
 
 enum class WasmOp {
     FuncInfo,    // 新增：存储函数元信息（参数数量等）
@@ -69,15 +70,46 @@ enum class WasmOp {
     F64Load, F64Store,
     I32Load, I32Store,
 
+    // i64 算術
+    I64Const,
+    I64Add, I64Sub, I64Mul,
+    I64DivS, I64DivU,
+    I64RemS, I64RemU,
+
+    // i64 位元
+    I64And, I64Or, I64Xor,
+    I64Shl, I64ShrS, I64ShrU,
+    I64Clz, I64Ctz, I64Popcnt,
+    I64Eqz,
+
+    // i64 比較
+    I64Eq, I64Ne,
+    I64LtS, I64LtU,
+    I64GtS, I64GtU,
+    I64LeS, I64LeU,
+    I64GeS, I64GeU,
+
+    // i64 型別轉換
+    I32WrapI64,
+    I64ExtendI32S, I64ExtendI32U,
+    F64ConvertI64S, F64ConvertI64U,
+    I64TruncF64S, I64TruncF64U,
+
+    // i64 memory
+    I64Load, I64Store,
+
     Call,       // operand = callee func index, foperand = num_args
     Unreachable,
     Unsupported
 };
 
 struct Instr {
-    WasmOp op;
-    int operand;
-    double foperand = 0.0;  // ← 加這行
+    WasmOp op = WasmOp::Unsupported;
+    union {
+        int operand;
+        double foperand;
+        int64_t i64operand;
+    };
 };
 
 struct InstrSeq {

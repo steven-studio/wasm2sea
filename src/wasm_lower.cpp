@@ -447,6 +447,61 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
             break;
         }
 
+        case WasmOp::I32LeS: {
+            int rhs = safePop();
+            int lhs = safePop();
+            int id = newValue(Op::Le_S);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I32GeS: {
+            int rhs = safePop();
+            int lhs = safePop();
+            int id = newValue(Op::Ge_S);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I32LtU: {
+            int rhs = safePop();
+            int lhs = safePop();
+            int id = newValue(Op::Lt_U);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I32GtU: {
+            int rhs = safePop();
+            int lhs = safePop();
+            int id = newValue(Op::Gt_U);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I32LeU: {
+            int rhs = safePop();
+            int lhs = safePop();
+            int id = newValue(Op::Le_U);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I32GeU: {
+            int rhs = safePop();
+            int lhs = safePop();
+            int id = newValue(Op::Ge_U);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            stack.push_back(id);
+            break;
+        }
+
         case WasmOp::I32And: {
             int rhs = safePop();
             int lhs = safePop();

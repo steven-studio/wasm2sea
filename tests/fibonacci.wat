@@ -1,5 +1,5 @@
 (module
-  (func $fibonacci (param $n i32) (result i32)
+  (func $test (param $n i32) (result i32)
     (local $a i32)
     (local $b i32)
     (local $temp i32)
@@ -66,5 +66,5 @@
     local.get $b
   )
   
-  (export "fibonacci" (func $fibonacci))
+  (export "test" (func $test))
 )

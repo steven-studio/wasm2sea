@@ -61,14 +61,21 @@ public:
     }
 
     void handleConst(Const* n) {
+        Instr instr;
         if (n->type == Type::i32) {
-            instructions.push_back({WasmOp::I32Const, n->value.geti32()});
+            instr.op = WasmOp::I32Const;
+            instr.operand = n->value.geti32();
+        } else if (n->type == Type::i64) {
+            instr.op = WasmOp::I64Const;
+            instr.i64operand = n->value.geti64();
         } else if (n->type == Type::f64) {
-            Instr instr;
             instr.op = WasmOp::F64Const;
             instr.foperand = n->value.getf64();
-            instructions.push_back(instr);
+        } else {
+            fprintf(stderr, "Warning: Unsupported const type\n");
+            return;
         }
+        instructions.push_back(instr);
     }
 
     void handleLocalSet(LocalSet* n) {
@@ -284,6 +291,35 @@ public:
             case ShrSInt32:  return WasmOp::I32ShrS;
             case ShrUInt32:  return WasmOp::I32ShrU;
 
+            // i64 算術
+            case AddInt64:   return WasmOp::I64Add;
+            case SubInt64:   return WasmOp::I64Sub;
+            case MulInt64:   return WasmOp::I64Mul;
+            case DivSInt64:  return WasmOp::I64DivS;
+            case DivUInt64:  return WasmOp::I64DivU;
+            case RemSInt64:  return WasmOp::I64RemS;
+            case RemUInt64:  return WasmOp::I64RemU;
+
+            // i64 位元
+            case AndInt64:   return WasmOp::I64And;
+            case OrInt64:    return WasmOp::I64Or;
+            case XorInt64:   return WasmOp::I64Xor;
+            case ShlInt64:   return WasmOp::I64Shl;
+            case ShrSInt64:  return WasmOp::I64ShrS;
+            case ShrUInt64:  return WasmOp::I64ShrU;
+
+            // i64 比較
+            case EqInt64:    return WasmOp::I64Eq;
+            case NeInt64:    return WasmOp::I64Ne;
+            case LtSInt64:   return WasmOp::I64LtS;
+            case LtUInt64:   return WasmOp::I64LtU;
+            case GtSInt64:   return WasmOp::I64GtS;
+            case GtUInt64:   return WasmOp::I64GtU;
+            case LeSInt64:   return WasmOp::I64LeS;
+            case LeUInt64:   return WasmOp::I64LeU;
+            case GeSInt64:   return WasmOp::I64GeS;
+            case GeUInt64:   return WasmOp::I64GeU;
+
             // f64 算術
             case AddFloat64: return WasmOp::F64Add;
             case SubFloat64: return WasmOp::F64Sub;
@@ -311,6 +347,23 @@ public:
             case ClzInt32:   return WasmOp::I32Clz;
             case CtzInt32:   return WasmOp::I32Ctz;
             case PopcntInt32: return WasmOp::I32Popcnt;
+
+            // i64
+            case EqZInt64:    return WasmOp::I64Eqz;
+            case ClzInt64:    return WasmOp::I64Clz;
+            case CtzInt64:    return WasmOp::I64Ctz;
+            case PopcntInt64: return WasmOp::I64Popcnt;
+
+            // i64 <-> i32 轉換
+            case WrapInt64:              return WasmOp::I32WrapI64;
+            case ExtendSInt32:           return WasmOp::I64ExtendI32S;
+            case ExtendUInt32:           return WasmOp::I64ExtendI32U;
+
+            // i64 <-> f64 轉換
+            case ConvertSInt64ToFloat64: return WasmOp::F64ConvertI64S;
+            case ConvertUInt64ToFloat64: return WasmOp::F64ConvertI64U;
+            case TruncSFloat64ToInt64:   return WasmOp::I64TruncF64S;
+            case TruncUFloat64ToInt64:   return WasmOp::I64TruncF64U;
 
             // f64 算術
             case AbsFloat64:  return WasmOp::F64Abs;
