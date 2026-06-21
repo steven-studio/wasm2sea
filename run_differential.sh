@@ -611,6 +611,29 @@ TESTS_I64_STORE_LOAD=(
   "i64_store_load 777777777777"
 )
 
+TESTS_I64_EXTEND_I32_S=(
+  "i64_extend_i32_s 0"
+  "i64_extend_i32_s 1"
+  "i64_extend_i32_s -1"
+  "i64_extend_i32_s 42"
+  "i64_extend_i32_s -42"
+  "i64_extend_i32_s 2147483647"
+  "i64_extend_i32_s -2147483648"
+  "i64_extend_i32_s 100"
+  "i64_extend_i32_s -100"
+  "i64_extend_i32_s 32767"
+  "i64_extend_i32_s -32768"
+  "i64_extend_i32_s 65535"
+  "i64_extend_i32_s -65535"
+  "i64_extend_i32_s 1000000"
+  "i64_extend_i32_s -1000000"
+  "i64_extend_i32_s 2147483646"
+  "i64_extend_i32_s -2147483647"
+  "i64_extend_i32_s 127"
+  "i64_extend_i32_s -128"
+  "i64_extend_i32_s 255"
+)
+
 TESTS_FACTORIAL=(
   "factorial 1"
   "factorial 2"
@@ -712,6 +735,7 @@ TESTS=(
   "if_eqz 1"
   "${TESTS_I32_STORE_LOAD[@]}"
   "${TESTS_I64_STORE_LOAD[@]}"
+  "${TESTS_I64_EXTEND_I32_S[@]}"
   "${TESTS_FACTORIAL[@]}"
   "${TESTS_FIBONACCI[@]}"
   "${TESTS_LOOP_SUM[@]}"

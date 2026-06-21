@@ -500,6 +500,45 @@ IRFunction* IRBridge::build(const ValueIR& values,
             value_map[i] = ir_CTPOP_I32(val_ref);  // Count Population (1 bits)
             break;
         }
+        case Op::I32WrapI64: {
+            ir_ref val_ref = value_map[val.lhs];
+            value_map[i] = ir_TRUNC_I32(val_ref);
+            break;
+        }
+        case Op::I64ExtendI32S: {
+            ir_ref val_ref = value_map[val.lhs];
+            value_map[i] = ir_SEXT_I64(val_ref);
+            break;
+        }
+        case Op::I64ExtendI32U: {
+            ir_ref val_ref = value_map[val.lhs];
+            value_map[i] = ir_ZEXT_I64(val_ref);
+            break;
+        }
+        case Op::F64ConvertI32S:
+        case Op::F64ConvertI64S: {
+            ir_ref val_ref = value_map[val.lhs];
+            value_map[i] = ir_INT2D(val_ref);
+            break;
+        }
+        case Op::F64ConvertI32U:
+        case Op::F64ConvertI64U: {
+            ir_ref val_ref = value_map[val.lhs];
+            value_map[i] = ir_INT2D(val_ref);  // dstogov/ir 沒有 unsigned version，用 INT2D
+            break;
+        }
+        case Op::I32TruncF64S:
+        case Op::I32TruncF64U: {
+            ir_ref val_ref = value_map[val.lhs];
+            value_map[i] = ir_FP2I32(val_ref);
+            break;
+        }
+        case Op::I64TruncF64S:
+        case Op::I64TruncF64U: {
+            ir_ref val_ref = value_map[val.lhs];
+            value_map[i] = ir_FP2I64(val_ref);
+            break;
+        }
         
         case Op::LocalGet: {
             int var_idx = val.paramIndex;

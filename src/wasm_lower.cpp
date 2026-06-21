@@ -618,6 +618,87 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
             stack.push_back(id);
             break;
         }
+        case WasmOp::I32WrapI64: {
+            int val = safePop();
+            int id = newValue(Op::I32WrapI64);
+            values[id].lhs = val;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I64ExtendI32S: {
+            int val = safePop();
+            int id = newValue(Op::I64ExtendI32S);
+            values[id].lhs = val;
+            values[id].type = ValueType::I64;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I64ExtendI32U: {
+            int val = safePop();
+            int id = newValue(Op::I64ExtendI32U);
+            values[id].lhs = val;
+            values[id].type = ValueType::I64;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::F64ConvertI32S: {
+            int val = safePop();
+            int id = newValue(Op::F64ConvertI32S);
+            values[id].lhs = val;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::F64ConvertI32U: {
+            int val = safePop();
+            int id = newValue(Op::F64ConvertI32U);
+            values[id].lhs = val;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::F64ConvertI64S: {
+            int val = safePop();
+            int id = newValue(Op::F64ConvertI64S);
+            values[id].lhs = val;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::F64ConvertI64U: {
+            int val = safePop();
+            int id = newValue(Op::F64ConvertI64U);
+            values[id].lhs = val;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I32TruncF64S: {
+            int val = safePop();
+            int id = newValue(Op::I32TruncF64S);
+            values[id].lhs = val;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I32TruncF64U: {
+            int val = safePop();
+            int id = newValue(Op::I32TruncF64U);
+            values[id].lhs = val;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I64TruncF64S: {
+            int val = safePop();
+            int id = newValue(Op::I64TruncF64S);
+            values[id].lhs = val;
+            values[id].type = ValueType::I64;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I64TruncF64U: {
+            int val = safePop();
+            int id = newValue(Op::I64TruncF64U);
+            values[id].lhs = val;
+            values[id].type = ValueType::I64;
+            stack.push_back(id);
+            break;
+        }
         case WasmOp::I32Clz: {
             int val = safePop();
             int id = newValue(Op::Clz);

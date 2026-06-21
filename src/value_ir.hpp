@@ -62,6 +62,12 @@ enum class Op {
     F64Eq, F64Ne, F64Lt, F64Gt, F64Le, F64Ge,
     F64ConvertI32S, F64ConvertI32U,
     I32TruncF64S, I32TruncF64U,
+    // i32 ↔ i64
+    I32WrapI64,
+    I64ExtendI32S, I64ExtendI32U,
+    // i64 ↔ f64
+    F64ConvertI64S, F64ConvertI64U,
+    I64TruncF64S, I64TruncF64U,
     // Memory
     Load, Store,
     F64Load, F64Store,
