@@ -18,7 +18,9 @@ public:
     ~IRBridge();
     
     // 將 ValueIR 轉成 dstogov/ir 的 IRFunction
-    IRFunction* build(const ValueIR& values, const std::vector<ParamType>& paramTypes = {});
+    IRFunction* build(const ValueIR& values, 
+                    const std::vector<ParamType>& paramTypes = {},
+                    void* memory_base = nullptr);
     
     // 印出 IR graph
     void dump(IRFunction* fn);

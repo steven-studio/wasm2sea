@@ -58,7 +58,9 @@ IRBridge::~IRBridge() {
     }
 }
 
-IRFunction* IRBridge::build(const ValueIR& values, const std::vector<ParamType>& paramTypes) {
+IRFunction* IRBridge::build(const ValueIR& values, 
+                             const std::vector<ParamType>& paramTypes,
+                             void* memory_base) {
     TRACE("--- paramTypes ---\n");
     for (size_t i = 0; i < paramTypes.size(); i++) {
         TRACE("  param[%zu] = %s\n", i, 
@@ -81,13 +83,25 @@ IRFunction* IRBridge::build(const ValueIR& values, const std::vector<ParamType>&
     // 開始建構 IR
     ir_START();
     ir_ref start = ctx_->ir_base[1].op2;  // START node reference
-    
+    // 先掃描是否有 memory 操作
+    bool has_memory_ops = false;
+    for (const auto& v : values) {
+        if (v.op == Op::Load || v.op == Op::Store || 
+            v.op == Op::F64Load || v.op == Op::F64Store) {
+            has_memory_ops = true;
+            break;
+        }
+    }
+
+    // 只有需要時才加 mem_param
+    ir_ref mem_param = IR_UNUSED;
+    if (has_memory_ops) {
+        mem_param = ir_PARAM(IR_ADDR, "__mem", 1);
+    }
+
     // 映射 ValueID → ir_ref
     std::vector<ir_ref> value_map(values.size(), IR_UNUSED);
-    // 预先创建所有参数（按照 paramIndex 排序）
     std::map<int, int> param_index_to_value_id;  // paramIndex -> value id
-    
-    // ← 添加这个！存储循环退出时的值
     std::unordered_map<int, ir_ref> loop_exit_values;
 
     // 第一遍：找出所有参数及其 paramIndex
@@ -104,13 +118,11 @@ IRFunction* IRBridge::build(const ValueIR& values, const std::vector<ParamType>&
         snprintf(name, sizeof(name), "p%d", param_idx);
         ir_type ir_type = IR_I32;  // 默认为 I32
         if (param_idx < (int)paramTypes.size()) {
-            if (paramTypes[param_idx] == ParamType::I64) {
-                ir_type = IR_I64;
-            } else if (paramTypes[param_idx] == ParamType::F64) {
-                ir_type = IR_DOUBLE;
-            }
+            if (paramTypes[param_idx] == ParamType::I64) ir_type = IR_I64;
+            else if (paramTypes[param_idx] == ParamType::F64) ir_type = IR_DOUBLE;
         }
-        ir_ref param_ref = ir_PARAM(ir_type, name, param_idx + 1);
+        int pos = has_memory_ops ? param_idx + 2 : param_idx + 1;
+        ir_ref param_ref = ir_PARAM(ir_type, name, pos);  // ← +2
         value_map[value_id] = param_ref;
 
         // ===== 添加这行 =====
@@ -993,9 +1005,8 @@ IRFunction* IRBridge::build(const ValueIR& values, const std::vector<ParamType>&
             if (val.lhs < 0 || val.lhs >= (int)i) break;
             ir_ref ptr_ref = value_map[val.lhs];
             if (ptr_ref == IR_UNUSED) break;
-            value_map[i] = ir_LOAD_I32(ptr_ref);
-            TRACE("  v%zu = Load(v%d) -> ir_LOAD_I32(ref %d) = ref %d\n\n",
-                i, val.lhs, ptr_ref, value_map[i]);
+            ir_ref real_ptr = ir_ADD_A(mem_param, ptr_ref);  // ← 用 mem_param
+            value_map[i] = ir_LOAD_I32(real_ptr);
             break;
         }
 
@@ -1005,8 +1016,8 @@ IRFunction* IRBridge::build(const ValueIR& values, const std::vector<ParamType>&
             ir_ref ptr_ref = value_map[val.lhs];
             ir_ref val_ref = value_map[val.rhs];
             if (ptr_ref == IR_UNUSED || val_ref == IR_UNUSED) break;
-            ir_STORE(ptr_ref, val_ref);
-            TRACE("  v%zu = Store(v%d, v%d)\n\n", i, val.lhs, val.rhs);
+            ir_ref real_ptr = ir_ADD_A(mem_param, ptr_ref);  // ← 用 mem_param
+            ir_STORE(real_ptr, val_ref);
             break;
         }
 

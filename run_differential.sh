@@ -565,6 +565,29 @@ TESTS_I64_REM_S=(
   "i64_rem_s -9223372036854775808 -9223372036854775808"
 )
 
+TESTS_I32_STORE_LOAD=(
+  "i32_store_load 0"
+  "i32_store_load 1"
+  "i32_store_load -1"
+  "i32_store_load 42"
+  "i32_store_load 100"
+  "i32_store_load -100"
+  "i32_store_load 2147483647"
+  "i32_store_load -2147483648"
+  "i32_store_load 255"
+  "i32_store_load 256"
+  "i32_store_load -255"
+  "i32_store_load 1000000"
+  "i32_store_load -1000000"
+  "i32_store_load 32767"
+  "i32_store_load -32768"
+  "i32_store_load 65535"
+  "i32_store_load 123456789"
+  "i32_store_load -123456789"
+  "i32_store_load 999999999"
+  "i32_store_load -999999999"
+)
+
 TESTS_FACTORIAL=(
   "factorial 1"
   "factorial 2"
@@ -664,6 +687,7 @@ TESTS=(
   "if_early_return 0"
   "if_eqz 0"
   "if_eqz 1"
+  "${TESTS_I32_STORE_LOAD[@]}"
   "${TESTS_FACTORIAL[@]}"
   "${TESTS_FIBONACCI[@]}"
   "${TESTS_LOOP_SUM[@]}"

@@ -18,6 +18,8 @@ static void usage(const char* prog) {
         << "  " << prog << " (no args: uses built-in example)\n";
 }
 
+static uint8_t wasm_memory[65536] = {0};
+
 int main(int argc, char* argv[]) {
     std::cout << "=== Wasm2Sea Compiler Pipeline ===\n\n";
     
