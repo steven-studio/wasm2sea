@@ -331,6 +331,13 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
             printState("I32Const(" + std::to_string(ins.operand) + ")");
             break;
         }
+        case WasmOp::I64Const: {
+            int id = newValue(Op::I32Const);  // 暫時複用，之後改
+            values[id].constValue = ins.i64operand;
+            values[id].type = ValueType::I64;
+            stack.push_back(id);
+            break;
+        }
         case WasmOp::I32Add: {
             if (stack.size() < 2) {
                 fprintf(stderr, "Error : Stack underflow at I32Add \n");
@@ -356,6 +363,32 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
             char buf[100];  // ✅ 加上這三行
             sprintf(buf, "v%d = Sub(v%d, v%d)", id, lhs, rhs);
             printState("I32Sub", buf);
+            break;
+        }
+        case WasmOp::I64Add: {
+            int rhs = safePop();
+            int lhs = safePop();
+            int id = newValue(Op::Add);
+            values[id].lhs = lhs;
+            values[id].rhs = rhs;
+            values[id].type = ValueType::I64;  // ← 標記型別
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I64Sub: {
+            int rhs = safePop(); int lhs = safePop();
+            int id = newValue(Op::Sub);
+            values[id].lhs = lhs; values[id].rhs = rhs;
+            values[id].type = ValueType::I64;
+            stack.push_back(id);
+            break;
+        }
+        case WasmOp::I64Mul: {
+            int rhs = safePop(); int lhs = safePop();
+            int id = newValue(Op::Mul);
+            values[id].lhs = lhs; values[id].rhs = rhs;
+            values[id].type = ValueType::I64;
+            stack.push_back(id);
             break;
         }
         case WasmOp::I32Mul: {

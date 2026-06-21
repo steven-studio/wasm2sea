@@ -6,6 +6,7 @@
 enum class Op {
     Param,     // 對應 local.get
     I32Const,     // 對應 i32.const
+    I64Const,     // 新增：對應 i64.const
     Add,       // 對應 i32.add
     Sub,       // 對應 i32.sub
     Mul,       // 對應 i32.mul
@@ -72,9 +73,12 @@ enum class Op {
     Return
 };
 
+enum class ValueType { I32, I64, F64, Void };
+
 struct Value {
-    int id;         // SSA value id
+    int id = -1;         // SSA value id
     Op op;     // 改：Op → ValueOp
+    ValueType type = ValueType::I32;  // 新增：值的类型
 
     int paramIndex = -1;  // for Param
     int constValue = 0;   // for I32Const

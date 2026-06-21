@@ -504,7 +504,16 @@ std::vector<FunctionResult> readWasmFile(const std::string& filename) {
         funcResult.name = funcName;           // ← 保存函数名
         funcResult.numParams = numParams;     // ← 保存参数数量
         funcResult.instructions = instrSeq;   // ← 保存指令序列
-        
+        fprintf(stderr, "DEBUG: filling paramTypes, numParams=%zu\n", func->getNumParams());
+        for (size_t j = 0; j < func->getNumParams(); j++) {
+            wasm::Type t = func->getLocalType(j);
+            fprintf(stderr, "DEBUG: param[%zu] type=%s\n", j, t.toString().c_str());
+            if (t == wasm::Type::i64)      funcResult.paramTypes.push_back(ParamType::I64);
+            else if (t == wasm::Type::f64) funcResult.paramTypes.push_back(ParamType::F64);
+            else                            funcResult.paramTypes.push_back(ParamType::I32);
+        }
+        fprintf(stderr, "DEBUG: paramTypes.size()=%zu\n", funcResult.paramTypes.size());
+
         results.push_back(funcResult);        // ← 添加到 results！
         
         printf("  Converted %zu instructions\n", instrSeq.size());

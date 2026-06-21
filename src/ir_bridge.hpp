@@ -1,5 +1,6 @@
 #pragma once
 #include "value_ir.hpp"
+#include "wasm_reader.hpp"
 #include <vector>
 
 // Forward declarations for dstogov/ir types
@@ -17,7 +18,7 @@ public:
     ~IRBridge();
     
     // 將 ValueIR 轉成 dstogov/ir 的 IRFunction
-    IRFunction* build(const ValueIR& values);
+    IRFunction* build(const ValueIR& values, const std::vector<ParamType>& paramTypes = {});
     
     // 印出 IR graph
     void dump(IRFunction* fn);

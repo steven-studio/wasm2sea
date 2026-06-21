@@ -104,7 +104,7 @@ int main(int argc, char* argv[]) {
         std::cout << "==================================\n";
 
         IRBridge bridge;
-        IRFunction* fn = bridge.build(values);
+        IRFunction* fn = bridge.build(values, func.paramTypes);
         
         // 印出 dstogov/ir 的 IR graph
         bridge.dump(fn);

@@ -58,7 +58,14 @@ IRBridge::~IRBridge() {
     }
 }
 
-IRFunction* IRBridge::build(const ValueIR& values) {
+IRFunction* IRBridge::build(const ValueIR& values, const std::vector<ParamType>& paramTypes) {
+    TRACE("--- paramTypes ---\n");
+    for (size_t i = 0; i < paramTypes.size(); i++) {
+        TRACE("  param[%zu] = %s\n", i, 
+            paramTypes[i] == ParamType::I64 ? "I64" :
+            paramTypes[i] == ParamType::F64 ? "F64" : "I32");
+    }
+    
     // 重要：dstogov/ir 的巨集需要變數名為 'ctx'
     ir_ctx* ctx = ctx_;
 
@@ -95,7 +102,15 @@ IRFunction* IRBridge::build(const ValueIR& values) {
     for (auto& [param_idx, value_id] : param_index_to_value_id) {
         char name[32];
         snprintf(name, sizeof(name), "p%d", param_idx);
-        ir_ref param_ref = ir_PARAM(IR_I32, name, param_idx + 1);
+        ir_type ir_type = IR_I32;  // 默认为 I32
+        if (param_idx < (int)paramTypes.size()) {
+            if (paramTypes[param_idx] == ParamType::I64) {
+                ir_type = IR_I64;
+            } else if (paramTypes[param_idx] == ParamType::F64) {
+                ir_type = IR_DOUBLE;
+            }
+        }
+        ir_ref param_ref = ir_PARAM(ir_type, name, param_idx + 1);
         value_map[value_id] = param_ref;
 
         // ===== 添加这行 =====
@@ -116,12 +131,23 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             local_indices.insert(v.local_index);
         }
     }
+
+    // 在建 local_vars 之前，先建 local_types map
+    std::unordered_map<int, ir_type> local_types;
+    for (int idx : local_indices) {
+        // 預設 I32，如果 paramTypes 說是 I64 就改
+        if (idx < (int)paramTypes.size() && paramTypes[idx] == ParamType::I64)
+            local_types[idx] = IR_I64;
+        else
+            local_types[idx] = IR_I32;
+    }
     
     std::unordered_map<int, ir_ref> local_vars;
     for (int idx : local_indices) {
         char name[32];
         snprintf(name, sizeof(name), "local_%d", idx);
-        ir_ref var = ir_VAR(IR_I32, name);
+        ir_type t = local_types.count(idx) ? local_types[idx] : IR_I32;
+        ir_ref var = ir_VAR(t, name);
         local_vars[idx] = var;
         
         // 如果是参数，初始化 VAR
@@ -166,11 +192,14 @@ IRFunction* IRBridge::build(const ValueIR& values) {
 
             ir_ref lhs_ref = value_map[val.lhs];
             ir_ref rhs_ref = value_map[val.rhs];
-            value_map[i] = ir_ADD_I32(lhs_ref, rhs_ref);
+            if (val.type == ValueType::I64)
+                value_map[i] = ir_ADD_I64(lhs_ref, rhs_ref);
+            else
+                value_map[i] = ir_ADD_I32(lhs_ref, rhs_ref);
 
             // ===== 添加这行 =====
-            TRACE("  v%zu = Add(v%d, v%d) -> ir_ADD_I32(ref %d, ref %d) = ref %d\n\n",
-                i, val.lhs, val.rhs, lhs_ref, rhs_ref, value_map[i]);
+            TRACE("  v%zu = Add(v%d, v%d) type=%s\n", i, val.lhs, val.rhs,
+                val.type == ValueType::I64 ? "I64" : "I32");
             // ===== 结束 =====
             break;
         }
@@ -188,7 +217,10 @@ IRFunction* IRBridge::build(const ValueIR& values) {
 
             ir_ref lhs_ref = value_map[val.lhs];
             ir_ref rhs_ref = value_map[val.rhs];
-            value_map[i] = ir_SUB_I32(lhs_ref, rhs_ref);
+            if (val.type == ValueType::I64)
+                value_map[i] = ir_SUB_I64(lhs_ref, rhs_ref);
+            else
+                value_map[i] = ir_SUB_I32(lhs_ref, rhs_ref);
             break;
         }
 
@@ -455,7 +487,8 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             ir_ref var_ref = it->second;
             
             // ✅ 從 VAR 加載值
-            ir_ref loaded_val = ir_VLOAD_I32(var_ref);
+            ir_type t = local_types.count(var_idx) ? local_types[var_idx] : IR_I32;
+            ir_ref loaded_val = (t == IR_I64) ? ir_VLOAD_I64(var_ref) : ir_VLOAD_I32(var_ref);
             value_map[i] = loaded_val;
             
             TRACE("  v%zu = LocalGet(local_%d) -> ir_VLOAD_I32(var %d) = ref %d\n\n",
@@ -604,6 +637,19 @@ IRFunction* IRBridge::build(const ValueIR& values) {
             value_map[i] = copy;
 
             TRACE(" -> ir_COPY_I32(ref %d) = ref %d (value)\n\n",
+            c, copy);
+            break;
+        }
+
+        case Op::I64Const: {
+            ir_ref c = ir_CONST_I64(val.constValue);
+            TRACE(" v%zu = Const(%d) -> ir_CONST_I64(%d) = ref %d (literal)\n",
+            i, val.constValue, val.constValue, c);
+
+            ir_ref copy = ir_COPY_I64(c);
+            value_map[i] = copy;
+
+            TRACE(" -> ir_COPY_I64(ref %d) = ref %d (value)\n\n",
             c, copy);
             break;
         }
