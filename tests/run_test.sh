@@ -14,8 +14,13 @@ cd ~/wasm2sea/third_party/dstogov-ir
 
 # 判斷是否需要 memory 參數
 if [[ "$TEST" == *store* ]] || [[ "$TEST" == *load* ]]; then
-    cc -O2 -include stdint.h -include stdbool.h out.c run_varargs_ffi_mem.c -o a.out \
-       $(pkg-config --cflags --libs libffi) -lm -ldl -lpthread 2>/dev/null
+    if [[ "$TEST" == i64_* ]]; then
+        cc -O2 -include stdint.h -include stdbool.h out.c run_varargs_ffi_mem_i64.c -o a.out \
+           $(pkg-config --cflags --libs libffi) -lm -ldl -lpthread 2>/dev/null
+    else
+        cc -O2 -include stdint.h -include stdbool.h out.c run_varargs_ffi_mem.c -o a.out \
+           $(pkg-config --cflags --libs libffi) -lm -ldl -lpthread 2>/dev/null
+    fi
 elif [[ "$TEST" == i64_* ]]; then
     cc -O2 -include stdint.h -include stdbool.h out.c run_varargs_ffi_i64.c -o a.out \
        $(pkg-config --cflags --libs libffi) -lm -ldl -lpthread 2>/dev/null

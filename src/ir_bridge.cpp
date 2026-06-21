@@ -1006,7 +1006,10 @@ IRFunction* IRBridge::build(const ValueIR& values,
             ir_ref ptr_ref = value_map[val.lhs];
             if (ptr_ref == IR_UNUSED) break;
             ir_ref real_ptr = ir_ADD_A(mem_param, ptr_ref);  // ← 用 mem_param
-            value_map[i] = ir_LOAD_I32(real_ptr);
+            if (val.type == ValueType::I64)
+                value_map[i] = ir_LOAD_I64(real_ptr);
+            else
+                value_map[i] = ir_LOAD_I32(real_ptr);
             break;
         }
 

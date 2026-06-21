@@ -838,6 +838,25 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
             break;
         }
 
+        case WasmOp::I64Load: {
+            int ptr = safePop();
+            int id = newValue(Op::Load);
+            values[id].lhs = ptr;
+            values[id].type = ValueType::I64;
+            stack.push_back(id);
+            break;
+        }
+
+        case WasmOp::I64Store: {
+            int val = safePop();
+            int ptr = safePop();
+            int id = newValue(Op::Store);
+            values[id].lhs = ptr;
+            values[id].rhs = val;
+            values[id].type = ValueType::I64;
+            break;
+        }
+
         case WasmOp::F64Store: {
             int val = safePop();
             int ptr = safePop();

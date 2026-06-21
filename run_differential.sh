@@ -588,6 +588,29 @@ TESTS_I32_STORE_LOAD=(
   "i32_store_load -999999999"
 )
 
+TESTS_I64_STORE_LOAD=(
+  "i64_store_load 0"
+  "i64_store_load 1"
+  "i64_store_load -1"
+  "i64_store_load 42"
+  "i64_store_load 100"
+  "i64_store_load -100"
+  "i64_store_load 2147483647"
+  "i64_store_load 2147483648"
+  "i64_store_load -2147483648"
+  "i64_store_load 9223372036854775807"
+  "i64_store_load -9223372036854775808"
+  "i64_store_load 1000000000000"
+  "i64_store_load -1000000000000"
+  "i64_store_load 123456789012345"
+  "i64_store_load -123456789012345"
+  "i64_store_load 4294967296"
+  "i64_store_load -4294967296"
+  "i64_store_load 999999999999"
+  "i64_store_load -999999999999"
+  "i64_store_load 777777777777"
+)
+
 TESTS_FACTORIAL=(
   "factorial 1"
   "factorial 2"
@@ -688,6 +711,7 @@ TESTS=(
   "if_eqz 0"
   "if_eqz 1"
   "${TESTS_I32_STORE_LOAD[@]}"
+  "${TESTS_I64_STORE_LOAD[@]}"
   "${TESTS_FACTORIAL[@]}"
   "${TESTS_FIBONACCI[@]}"
   "${TESTS_LOOP_SUM[@]}"
