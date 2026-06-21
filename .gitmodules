@@ -10,3 +10,6 @@
 [submodule "third_party/dstogov-ir"]
 	path = third_party/dstogov-ir
 	url = https://github.com/dstogov/ir.git
+[submodule "benchmarks/polybench/original"]
+	path = benchmarks/polybench/original
+	url = https://github.com/MatthiasJReisinger/PolyBenchC-4.2.1.git
