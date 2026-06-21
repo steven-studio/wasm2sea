@@ -657,6 +657,29 @@ TESTS_I64_EXTEND_I32_U=(
   "i64_extend_i32_u -255"
 )
 
+TESTS_I32_WRAP_I64=(
+  "i32_wrap_i64 0"
+  "i32_wrap_i64 1"
+  "i32_wrap_i64 -1"
+  "i32_wrap_i64 42"
+  "i32_wrap_i64 -42"
+  "i32_wrap_i64 2147483647"
+  "i32_wrap_i64 -2147483648"
+  "i32_wrap_i64 2147483648"
+  "i32_wrap_i64 -2147483649"
+  "i32_wrap_i64 4294967295"
+  "i32_wrap_i64 4294967296"
+  "i32_wrap_i64 -4294967296"
+  "i32_wrap_i64 9223372036854775807"
+  "i32_wrap_i64 -9223372036854775808"
+  "i32_wrap_i64 100"
+  "i32_wrap_i64 -100"
+  "i32_wrap_i64 65535"
+  "i32_wrap_i64 65536"
+  "i32_wrap_i64 1000000000"
+  "i32_wrap_i64 -1000000000"
+)
+
 TESTS_FACTORIAL=(
   "factorial 1"
   "factorial 2"
@@ -760,6 +783,7 @@ TESTS=(
   "${TESTS_I64_STORE_LOAD[@]}"
   "${TESTS_I64_EXTEND_I32_S[@]}"
   "${TESTS_I64_EXTEND_I32_U[@]}"
+  "${TESTS_I32_WRAP_I64[@]}"
   "${TESTS_FACTORIAL[@]}"
   "${TESTS_FIBONACCI[@]}"
   "${TESTS_LOOP_SUM[@]}"

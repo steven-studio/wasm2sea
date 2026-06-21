@@ -24,6 +24,9 @@ if [[ "$TEST" == *store* ]] || [[ "$TEST" == *load* ]]; then
 elif [[ "$TEST" == i64_* ]]; then
     cc -O2 -include stdint.h -include stdbool.h out.c run_varargs_ffi_i64.c -o a.out \
        $(pkg-config --cflags --libs libffi) -lm -ldl -lpthread 2>/dev/null
+elif [[ "$TEST" == i32_wrap_* ]]; then
+    cc -O2 -include stdint.h -include stdbool.h out.c run_varargs_ffi_i64_ret_i32.c -o a.out \
+       $(pkg-config --cflags --libs libffi) -lm -ldl -lpthread 2>/dev/null
 else
     cc -O2 -include stdint.h -include stdbool.h out.c run_varargs_ffi.c -o a.out \
        $(pkg-config --cflags --libs libffi) -lm -ldl -lpthread 2>/dev/null
