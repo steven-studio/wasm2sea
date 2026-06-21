@@ -237,7 +237,10 @@ IRFunction* IRBridge::build(const ValueIR& values, const std::vector<ParamType>&
 
             ir_ref lhs_ref = value_map[val.lhs];
             ir_ref rhs_ref = value_map[val.rhs];
-            value_map[i] = ir_MUL_I32(lhs_ref, rhs_ref);
+            if (val.type == ValueType::I64)
+                value_map[i] = ir_MUL_I64(lhs_ref, rhs_ref);
+            else
+                value_map[i] = ir_MUL_I32(lhs_ref, rhs_ref);
             break;
         }
 
@@ -253,7 +256,10 @@ IRFunction* IRBridge::build(const ValueIR& values, const std::vector<ParamType>&
             
             ir_ref lhs_ref = value_map[val.lhs];
             ir_ref rhs_ref = value_map[val.rhs];
-            value_map[i] = ir_DIV_I32(lhs_ref, rhs_ref);  // ✅ 正確
+            if (val.type == ValueType::I64)
+                value_map[i] = ir_DIV_I64(lhs_ref, rhs_ref);
+            else
+                value_map[i] = ir_DIV_I32(lhs_ref, rhs_ref);
             break;
         }
         case Op::Div_U: {
@@ -268,7 +274,10 @@ IRFunction* IRBridge::build(const ValueIR& values, const std::vector<ParamType>&
             
             ir_ref lhs_ref = value_map[val.lhs];
             ir_ref rhs_ref = value_map[val.rhs];
-            value_map[i] = ir_DIV_U32(lhs_ref, rhs_ref);  // ✅ 改成 U32
+            if (val.type == ValueType::I64)
+                value_map[i] = ir_DIV_U64(lhs_ref, rhs_ref);
+            else
+                value_map[i] = ir_DIV_U32(lhs_ref, rhs_ref);
             break;
         }
         case Op::Rem_S: {
@@ -283,7 +292,10 @@ IRFunction* IRBridge::build(const ValueIR& values, const std::vector<ParamType>&
             
             ir_ref lhs_ref = value_map[val.lhs];
             ir_ref rhs_ref = value_map[val.rhs];
-            value_map[i] = ir_MOD_I32(lhs_ref, rhs_ref);  // ✅ 正確
+            if (val.type == ValueType::I64)
+                value_map[i] = ir_MOD_I64(lhs_ref, rhs_ref);
+            else
+                value_map[i] = ir_MOD_I32(lhs_ref, rhs_ref);
             break;
         }
         case Op::Rem_U: {
@@ -298,7 +310,10 @@ IRFunction* IRBridge::build(const ValueIR& values, const std::vector<ParamType>&
             
             ir_ref lhs_ref = value_map[val.lhs];
             ir_ref rhs_ref = value_map[val.rhs];
-            value_map[i] = ir_MOD_U32(lhs_ref, rhs_ref);  // ✅ 改成 U32
+            if (val.type == ValueType::I64)
+                value_map[i] = ir_MOD_U64(lhs_ref, rhs_ref);
+            else
+                value_map[i] = ir_MOD_U32(lhs_ref, rhs_ref);
             break;
         }
 
