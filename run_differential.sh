@@ -703,6 +703,29 @@ TESTS_F64_CONVERT_I32_S=(
   "f64_convert_i32_s 123456789"
 )
 
+TESTS_F64_CONVERT_I64_S=(
+  "f64_convert_i64_s 1"
+  "f64_convert_i64_s -1"
+  "f64_convert_i64_s 42"
+  "f64_convert_i64_s -42"
+  "f64_convert_i64_s 100"
+  "f64_convert_i64_s -100"
+  "f64_convert_i64_s 2147483647"
+  "f64_convert_i64_s -2147483648"
+  "f64_convert_i64_s 2147483648"
+  "f64_convert_i64_s -2147483649"
+  "f64_convert_i64_s 1000000000000"
+  "f64_convert_i64_s -1000000000000"
+  "f64_convert_i64_s 123456789012345"
+  "f64_convert_i64_s -123456789012345"
+  "f64_convert_i64_s 4294967296"
+  "f64_convert_i64_s -4294967296"
+  "f64_convert_i64_s 999999999999"
+  "f64_convert_i64_s -999999999999"
+  "f64_convert_i64_s 777777777777"
+  "f64_convert_i64_s -777777777777"
+)
+
 TESTS_FACTORIAL=(
   "factorial 1"
   "factorial 2"
@@ -808,6 +831,7 @@ TESTS=(
   "${TESTS_I64_EXTEND_I32_U[@]}"
   "${TESTS_I32_WRAP_I64[@]}"
   "${TESTS_F64_CONVERT_I32_S[@]}"
+  "${TESTS_F64_CONVERT_I64_S[@]}"
   "${TESTS_FACTORIAL[@]}"
   "${TESTS_FIBONACCI[@]}"
   "${TESTS_LOOP_SUM[@]}"
