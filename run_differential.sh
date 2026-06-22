@@ -726,6 +726,29 @@ TESTS_F64_CONVERT_I64_S=(
   "f64_convert_i64_s -777777777777"
 )
 
+TESTS_I32_TRUNC_F64_S=(
+  "i32_trunc_f64_s 0.0"
+  "i32_trunc_f64_s 1.0"
+  "i32_trunc_f64_s -1.0"
+  "i32_trunc_f64_s 42.0"
+  "i32_trunc_f64_s -42.0"
+  "i32_trunc_f64_s 3.14"
+  "i32_trunc_f64_s -3.14"
+  "i32_trunc_f64_s 3.99"
+  "i32_trunc_f64_s -3.99"
+  "i32_trunc_f64_s 100.5"
+  "i32_trunc_f64_s -100.5"
+  "i32_trunc_f64_s 1000.9"
+  "i32_trunc_f64_s -1000.9"
+  "i32_trunc_f64_s 2147483647.0"
+  "i32_trunc_f64_s -2147483648.0"
+  "i32_trunc_f64_s 0.1"
+  "i32_trunc_f64_s -0.1"
+  "i32_trunc_f64_s 0.9"
+  "i32_trunc_f64_s -0.9"
+  "i32_trunc_f64_s 255.99"
+)
+
 TESTS_FACTORIAL=(
   "factorial 1"
   "factorial 2"
@@ -832,6 +855,7 @@ TESTS=(
   "${TESTS_I32_WRAP_I64[@]}"
   "${TESTS_F64_CONVERT_I32_S[@]}"
   "${TESTS_F64_CONVERT_I64_S[@]}"
+  "${TESTS_I32_TRUNC_F64_S[@]}"
   "${TESTS_FACTORIAL[@]}"
   "${TESTS_FIBONACCI[@]}"
   "${TESTS_LOOP_SUM[@]}"
