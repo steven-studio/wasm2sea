@@ -68,14 +68,13 @@ std::vector<FunctionResult> readWasmFile(const std::string& filename) {
             exportIndex, exp->name.str.data(), (int)exp->kind);
 
         if (exp->kind == ExternalKind::Function) {
-            if (exportIndex < module.functions.size()) {
-                functionExports[exportIndex] = exp->name.str;
-                printf("  -> ✓ Mapped: functionExports[%zu] = '%s'\n", 
-                    exportIndex, exp->name.str.data());
-            } else {
-                printf("  -> ✗ Warning: exportIndex >= functions.size()\n");
+            Name internalName = *exp->getInternalName();
+            for (size_t i = 0; i < module.functions.size(); i++) {
+                if (module.functions[i]->name == internalName) {
+                    functionExports[i] = std::string(exp->name.str);
+                    break;
+                }
             }
-            exportIndex++;
         }
     }
 
