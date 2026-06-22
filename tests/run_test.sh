@@ -30,6 +30,9 @@ elif [[ "$TEST" == i32_wrap_* ]]; then
 elif [[ "$TEST" == i32_trunc_* ]]; then
     cc -O2 -include stdint.h -include stdbool.h out.c run_varargs_ffi_f64_ret_i32.c -o a.out \
        $(pkg-config --cflags --libs libffi) -lm -ldl -lpthread 2>/dev/null
+elif [[ "$TEST" == i64_trunc_* ]]; then
+    cc -O2 -include stdint.h -include stdbool.h out.c run_varargs_ffi_f64_ret_i64.c -o a.out \
+       $(pkg-config --cflags --libs libffi) -lm -ldl -lpthread 2>/dev/null
 elif [[ "$TEST" == f64_convert_i32_* ]]; then
     cc -O2 -include stdint.h -include stdbool.h out.c run_varargs_ffi_f64.c -o a.out \
        $(pkg-config --cflags --libs libffi) -lm -ldl -lpthread 2>/dev/null
