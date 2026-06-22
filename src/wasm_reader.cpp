@@ -31,7 +31,7 @@ public:
     }
 
     // 每個 node type 變成獨立 private method
-    void handleLocalGet(LocalGet* n) {
+    void visitLocalGet(LocalGet* n) {
         instructions.push_back({WasmOp::LocalGet, (int)n->index});
     }
 
@@ -43,16 +43,16 @@ public:
         return -1;
     }
 
-    void handleGlobalGet(GlobalGet* n) {
+    void visitGlobalGet(GlobalGet* n) {
         instructions.push_back({WasmOp::GlobalGet, getGlobalIndex(n->name)});
     }
 
-    void handleGlobalSet(GlobalSet* n) {
+    void visitGlobalSet(GlobalSet* n) {
         visitExpression(n->value);
         instructions.push_back({WasmOp::GlobalSet, getGlobalIndex(n->name)});
     }
 
-    void handleLoad(Load* n) {
+    void visitLoad(Load* n) {
         visitExpression(n->ptr);
         Instr instr;
         instr.op = (n->type == Type::f64) ? WasmOp::F64Load : WasmOp::I32Load;
@@ -60,7 +60,7 @@ public:
         instructions.push_back(instr);
     }
 
-    void handleConst(Const* n) {
+    void visitConst(Const* n) {
         Instr instr;
         if (n->type == Type::i32) {
             instr.op = WasmOp::I32Const;
@@ -78,7 +78,7 @@ public:
         instructions.push_back(instr);
     }
 
-    void handleLocalSet(LocalSet* n) {
+    void visitLocalSet(LocalSet* n) {
         visitExpression(n->value);
         if (n->isTee()) {
             instructions.push_back({WasmOp::LocalTee, (int)n->index});
@@ -87,7 +87,7 @@ public:
         }
     }
 
-    void handleStore(Store* n) {
+    void visitStore(Store* n) {
         visitExpression(n->ptr);
         visitExpression(n->value);
         Instr instr;
@@ -96,13 +96,13 @@ public:
         instructions.push_back(instr);
     }
 
-    void handleBinary(Binary* n) {
+    void visitBinary(Binary* n) {
         visitExpression(n->left);
         visitExpression(n->right);
         instructions.push_back({binaryOpToWasmOp(n->op), 0});
     }
 
-    void handleUnary(Unary* n) {
+    void visitUnary(Unary* n) {
         visitExpression(n->value);
         WasmOp op = unaryOpToWasmOp(n->op);
         if (op == WasmOp::Unsupported)
@@ -110,14 +110,14 @@ public:
         instructions.push_back({op, 0});
     }
 
-    void handleSelect(Select* n) {
+    void visitSelect(Select* n) {
         visitExpression(n->ifFalse);
         visitExpression(n->ifTrue);
         visitExpression(n->condition);
         instructions.push_back({WasmOp::Select, 0});
     }
 
-    void handleDrop(Drop* n) {
+    void visitDrop(Drop* n) {
         visitExpression(n->value);
         instructions.push_back({WasmOp::Drop, 0});
     }
@@ -129,7 +129,7 @@ public:
         return -1;
     }
 
-    void handleCall(Call* n) {
+    void visitCall(Call* n) {
         for (auto* operand : n->operands) {
             visitExpression(operand);
         }
@@ -140,7 +140,7 @@ public:
         instructions.push_back(instr);
     }
 
-    void handleIf(If* n) {
+    void visitIf(If* n) {
         visitExpression(n->condition);
         instructions.push_back({WasmOp::If, 0});
         visitExpression(n->ifTrue);
@@ -151,7 +151,7 @@ public:
         instructions.push_back({WasmOp::End, 0});
     }
 
-    void handleLoop(Loop* n) {
+    void visitLoop(Loop* n) {
         label_stack.push_back(n->name);
         instructions.push_back({WasmOp::Loop, 0});
         visitExpression(n->body);
@@ -159,7 +159,7 @@ public:
         label_stack.pop_back();
     }
 
-    void handleBreak(Break* n) {
+    void visitBreak(Break* n) {
         int depth = getLabelDepth(n->name);
         if (depth < 0) {
             fprintf(stderr, "Error: Unknown label in br: %s\n",
@@ -174,14 +174,14 @@ public:
         }
     }
 
-    void handleSwitch(Switch* n) {
+    void visitSwitch(Switch* n) {
         visitExpression(n->condition);
         int depth = getLabelDepth(n->default_);
         if (depth < 0) depth = 0;
         instructions.push_back({WasmOp::BrTable, depth});
     }
 
-    void handleBlock(Block* n) {
+    void visitBlock(Block* n) {
         if (n->name.is()) label_stack.push_back(n->name);
         for (auto* expr : n->list) {
             visitExpression(expr);
@@ -189,27 +189,27 @@ public:
         if (n->name.is()) label_stack.pop_back();
     }
 
-    void handleReturn(Return* n) {
+    void visitReturn(Return* n) {
         if (n->value) visitExpression(n->value);
         instructions.push_back({WasmOp::Return, 0});
     }
 
-    void handleUnreachable() {
+    void visitUnreachable(Unreachable* n) {
         instructions.push_back({WasmOp::Unreachable, 0});
     }
 
-    void handleMemorySize() {
+    void visitMemorySize(MemorySize* n) {
         instructions.push_back({WasmOp::MemorySize, 0});
     }
 
-    void handleMemoryCopy(MemoryCopy* n) {
+    void visitMemoryCopy(MemoryCopy* n) {
         visitExpression(n->dest);
         visitExpression(n->source);
         visitExpression(n->size);
         instructions.push_back({WasmOp::MemoryCopy, 0});
     }
 
-    void handleMemoryFill(MemoryFill* n) {
+    void visitMemoryFill(MemoryFill* n) {
         visitExpression(n->dest);
         visitExpression(n->value);
         visitExpression(n->size);
@@ -217,47 +217,8 @@ public:
     }
 
     void visitExpression(Expression* curr) {
-        // 手动控制遍历顺序
         if (!curr) return;
-
-        // 讀
-        if      (auto* n = curr->dynCast<LocalGet>()) handleLocalGet(n);
-        else if (auto* n = curr->dynCast<GlobalGet>()) handleGlobalGet(n);
-        else if (auto* n = curr->dynCast<Load>())     handleLoad(n);
-        else if (auto* n = curr->dynCast<Const>())    handleConst(n);
-
-        // 寫
-        else if (auto* n = curr->dynCast<LocalSet>()) handleLocalSet(n);
-        else if (auto* n = curr->dynCast<GlobalSet>()) handleGlobalSet(n);
-        else if (auto* n = curr->dynCast<Store>())    handleStore(n);
-
-        // 運算
-        else if (auto* n = curr->dynCast<Binary>())   handleBinary(n);
-        else if (auto* n = curr->dynCast<Unary>())    handleUnary(n);
-        else if (auto* n = curr->dynCast<Select>())    handleSelect(n);
-        else if (auto* n = curr->dynCast<Drop>())      handleDrop(n);
-        else if (auto* n = curr->dynCast<Call>())      handleCall(n);
-
-        // 控制流
-        else if (auto* n = curr->dynCast<If>())       handleIf(n);
-        else if (auto* n = curr->dynCast<Loop>())     handleLoop(n);
-        else if (auto* n = curr->dynCast<Break>())   handleBreak(n);
-        else if (auto* n = curr->dynCast<Switch>())    handleSwitch(n);
-        else if (auto* n = curr->dynCast<Block>())    handleBlock(n);
-        else if (auto* n = curr->dynCast<Return>()) handleReturn(n);
-        else if (auto* n = curr->dynCast<Drop>())      handleDrop(n);
-        
-        // Memory
-        else if (curr->is<wasm::Unreachable>())   handleUnreachable();
-        else if (curr->is<wasm::MemorySize>())    handleMemorySize();
-        else if (auto* n = curr->dynCast<wasm::MemoryCopy>()) handleMemoryCopy(n);
-        else if (auto* n = curr->dynCast<wasm::MemoryFill>()) handleMemoryFill(n);
-        else {
-            // Unsupported instruction, skip
-            std::cerr << "[WARN] Unsupported expression type: " 
-                    << wasm::getExpressionName(curr) << "\n";
-            instructions.push_back({WasmOp::Unsupported, 0});
-        }
+        visit(curr);  // Binaryen 自動 dispatch 到對應的 visitXxx
     }
 
     static WasmOp binaryOpToWasmOp(BinaryOp op) {
