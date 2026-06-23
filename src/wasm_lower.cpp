@@ -764,6 +764,16 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
             break;
         }
 
+        case WasmOp::Block: {
+            ControlFrame frame;
+            frame.type = ControlFrame::Block;
+            frame.stack_size = stack.size();
+            frame.entry_locals = localVars;
+            frame.has_else = false;
+            control_stack.push_back(frame);
+            break;
+        }
+
         case WasmOp::Br_if: {
             if (stack.empty()) break;
             int cond = stack.back();

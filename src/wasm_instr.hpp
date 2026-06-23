@@ -43,6 +43,7 @@ enum class WasmOp {
     End,
 
     // 新增
+    Block,
     Loop,
     Br,
     Br_if,
