@@ -764,13 +764,15 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
                     
             // 掃描這個 loop body 會修改哪些 local
             std::unordered_set<int> modified_locals;
+            std::unordered_set<int> reset_in_outer;   // 在 outer loop 開頭被重設的 local
+
             int depth = 1;
             for (size_t j = i + 1; j < code.size() && depth > 0; j++) {
                 if (code[j].op == WasmOp::Loop || 
                     code[j].op == WasmOp::Block || 
                     code[j].op == WasmOp::If) depth++;
                 else if (code[j].op == WasmOp::End) depth--;
-                if (depth > 0 && code[j].op == WasmOp::LocalSet)
+                if (depth == 1 && code[j].op == WasmOp::LocalSet)  // ← depth==1 才是當層
                     modified_locals.insert(code[j].operand);
             }
 
@@ -843,13 +845,19 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
                 values[br_if_id].rhs = target.loop_start_id;
                 values[br_if_id].constValue = 0; // loop_back
             } else if (target.type == ControlFrame::Block) {
-                // br_if 1：break block / exit loop
+                // 找包含這個 Block 的外層 loop
+                int block_idx = (int)control_stack.size() - 1 - depth;
+                int outer_loop_start_id = -1;
+                for (int k = block_idx + 1; k < (int)control_stack.size(); k++) {
+                    if (control_stack[k].type == ControlFrame::Loop) {
+                        outer_loop_start_id = control_stack[k].loop_start_id;
+                        break;
+                    }
+                }
                 int br_if_id = newValue(Op::Br_if);
                 values[br_if_id].lhs = cond;
-                values[br_if_id].rhs = -1;
-                values[br_if_id].constValue = 1; // loop_exit
-
-                // 注意：這裡不要更新 loop phi backedge
+                values[br_if_id].rhs = outer_loop_start_id;  // ← 外層 loop 的 start id
+                values[br_if_id].constValue = 1; // block_exit
             }
             break;
         }
@@ -875,6 +883,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
                 if (!target.loop_phis.empty())
                     first_phi_id = target.loop_phis.begin()->second;
                 values[br_id].rhs = first_phi_id;
+                fprintf(stderr, "[BR_LOWER] depth=%d, loop_start_id=%d, lhs=%d, rhs=%d\n",
+                    depth, target.loop_start_id, values[br_id].lhs, values[br_id].rhs);
             } else {
                 // Block/If: 把 stack top 當作 block 的回傳值存起來
                 if (!stack.empty())

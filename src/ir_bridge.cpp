@@ -414,15 +414,8 @@ void IRBridge::handleEnd(BuildContext& bc, const Value& val) {
     }
 
     // loop end：只有這裡才 pop loop_stack
-    if (val.constValue == 0 && !loop_stack.empty()) {
-        LoopInfo loop = loop_stack.back();
-        loop_stack.pop_back();
-
-        if (!loop.exits.empty()) {
-            ir_BEGIN(loop.exits[0]);
-        }
-
-        TRACE("  v%zu = End(loop) exits=%zu\n", i, loop.exits.size());
+    if (val.constValue == 0) {
+        TRACE("  v%zu = End(loop)\n", i);
         return;
     }
 }
@@ -454,14 +447,9 @@ void IRBridge::handleBrIf(BuildContext& bc, const Value& val) {
     if (val.constValue == 1) {
         // br_if depth=1: break block / exit loop
         ir_IF_TRUE(if_node);
-        ir_ref exit_end = ir_END();   // 這條是跳出 loop/block 的路
+        ir_ref exit_end = ir_END();
         loop_stack.back().exits.push_back(exit_end);
-
         ir_IF_FALSE(if_node);
-        // false 繼續跑 loop body
-
-        // 先不要 MERGE_SET_OP loop_begin
-        // 這不是 backedge
         return;
     }
 
@@ -485,6 +473,7 @@ void IRBridge::handleBrIf(BuildContext& bc, const Value& val) {
 }
 
 void IRBridge::handleBr(BuildContext& bc, const Value& val) {
+    fprintf(stderr, "[BR_BRIDGE] val.lhs=%d, val.rhs=%d\n", val.lhs, val.rhs);
     ir_ctx* ctx = bc.ctx;
     size_t i = bc.current_index;
     if (val.lhs < 0) return;  // Block target
@@ -497,13 +486,19 @@ void IRBridge::handleBr(BuildContext& bc, const Value& val) {
             break;
         }
     }
+    fprintf(stderr, "[BR_FIND] val.lhs=%d, loop_stack.size=%zu, target_loop=%p\n",
+        val.lhs, loop_stack.size(), (void*)target_loop);    
+    for (int k = 0; k < (int)loop_stack.size(); k++)
+        fprintf(stderr, "  loop_stack[%d].loop_value_id=%d\n", k, loop_stack[k].loop_value_id);
     if (!target_loop && !loop_stack.empty()) target_loop = &loop_stack.back();
     if (!target_loop) return;
 
     for (int phi_id : target_loop->phi_ids) {
         const Value& phi_val = bc.values[phi_id];
         if ((int)phi_val.operands.size() >= 2) {
-            ir_PHI_SET_OP(bc.value_map[phi_id], 2, bc.value_map[phi_val.operands[1]]);
+            ir_ref phi_ref = bc.value_map[phi_id];
+            ir_ref backedge_ref = bc.value_map[phi_val.operands[1]];
+            ir_PHI_SET_OP(phi_ref, 2, backedge_ref);
         }
     }
 
@@ -511,16 +506,14 @@ void IRBridge::handleBr(BuildContext& bc, const Value& val) {
         val.rhs, target_loop ? target_loop->loop_begin : -1,
         target_loop ? target_loop->loop_exit : -1);
 
-    if (target_loop->loop_exit != IR_UNUSED) {
-        ir_ref end_body = ir_END();  // ← 先建，這時還有 control
-        ir_BEGIN(target_loop->loop_exit);                    // 切換到 exit 路徑
-        ir_ref loop_end_ref = ir_LOOP_END();                 // 在 exit 路徑建 back-edge
-        ir_MERGE_SET_OP(target_loop->loop_begin, 2, loop_end_ref);
-        ir_MERGE_2(loop_end_ref, end_body);                  // merge exit 和 body
-    } else {
-        ir_ref loop_end_ref = ir_LOOP_END();
-        ir_MERGE_SET_OP(target_loop->loop_begin, 2, loop_end_ref);
+    ir_ref loop_end_ref = ir_LOOP_END();
+    ir_MERGE_SET_OP(target_loop->loop_begin, 2, loop_end_ref);
+    if (!target_loop->exits.empty()) {
+        ir_BEGIN(target_loop->exits[0]);
+        ir_ref end_exit = ir_END();
+        ir_MERGE_2(loop_end_ref, end_exit);
     }
+    loop_stack.pop_back();
     TRACE("  v%zu = Br -> LOOP_END\n\n", i);
 }
 
