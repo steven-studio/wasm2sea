@@ -57,6 +57,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
         std::unordered_map<int, int> entry_locals;  // if 入口時的局部變量
         std::unordered_map<int, int> then_locals;   // ← 新增：then 结束时
         std::unordered_map<int, int> else_locals;   // ← 新增：else 结束时
+
+        std::unordered_set<int> set_before_inner;  // outer loop 在 inner 之前就 Set 的 local
     };
     std::vector<ControlFrame> control_stack;
 
@@ -824,7 +826,8 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
                 // 檢查外層 loop 是否沒有為這個 idx 建 PHI（代表需要從 VAR VLOAD）
                 for (auto& outer_frame : control_stack) {
                     if (outer_frame.type == ControlFrame::Loop && 
-                        outer_frame.loop_phis.count(idx) == 0) {
+                        outer_frame.loop_phis.count(idx) == 0 && 
+                        !outer_frame.set_before_inner.count(idx)) {
                         values[phi_id].use_vload_entry = true;
                         break;
                     }
@@ -844,6 +847,7 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
             }
             fprintf(stderr, " }\n");
             
+            frame.set_before_inner = set_before_inner;
             control_stack.push_back(frame);
             break;
         }

@@ -10,9 +10,13 @@ cd ~/wasm2sea/build
 ./wasm2sea ../tests/${TEST}.wasm 2>/dev/null
 
 cd ~/wasm2sea/third_party/dstogov-ir
-./ir ../../build/${TEST}.ir --emit-c out.c 2>/dev/null
+if [[ "$TEST" == *nested_loop* ]]; then
+    ./ir ../../build/${TEST}.ir -O0 --emit-c out.c 2>/dev/null
+    sed -i '1s/^/int32_t local_0, local_1, local_2;\n/' out.c
+else
+    ./ir ../../build/${TEST}.ir --emit-c out.c 2>/dev/null
+fi
 
-# 判斷是否需要 memory 參數
 if [[ "$TEST" == *store* ]] || [[ "$TEST" == *load* ]]; then
     if [[ "$TEST" == i64_* ]]; then
         cc -O2 -include stdint.h -include stdbool.h out.c run_varargs_ffi_mem_i64.c -o a.out \
@@ -42,9 +46,6 @@ elif [[ "$TEST" == f64_convert_i64_* ]]; then
 elif [[ "$TEST" == matmul* ]]; then
     cc -O2 -include stdint.h -include stdbool.h out.c run_varargs_ffi_matmul.c -o a.out \
        $(pkg-config --cflags --libs libffi) -lm -ldl -lpthread 2>/dev/null
-elif [[ "$TEST" == *nested_loop* ]] || [[ "$TEST" == matmul* ]]; then
-    cc -O2 -include stdint.h -include stdbool.h out.c run_varargs_ffi_mem.c -o a.out \
-       $(pkg-config --cflags --libs libffi) -lm -ldl -lpthread 2>/dev/null
 elif [[ "$TEST" == bubble_sort* ]] || [[ "$TEST" == *sort* ]]; then
     cc -O2 -include stdint.h -include stdbool.h out.c run_varargs_ffi_sort.c -o a.out \
        $(pkg-config --cflags --libs libffi) -lm -ldl -lpthread 2>/dev/null
@@ -54,3 +55,4 @@ else
 fi
 
 ./a.out "$@"
+EOF

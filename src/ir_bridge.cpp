@@ -510,11 +510,16 @@ void IRBridge::handleBr(BuildContext& bc, const Value& val) {
     if (loop_stack.size() >= 2) {
         LoopInfo& outer_loop = loop_stack[loop_stack.size() - 2];
         for (auto& [local_idx, outer_phi_ref] : outer_loop.outer_carry_phis) {
+            fprintf(stderr, "[OUTER_CARRY] Looking for local_%d in phi_ids (size=%zu)\n",
+                local_idx, target_loop->phi_ids.size());
             // 找 inner loop 裡這個 local 的最新值
             for (int phi_id : target_loop->phi_ids) {
                 const Value& phi_val = bc.values[phi_id];
+                fprintf(stderr, "  phi_id=%d, local_index=%d\n", phi_id, phi_val.local_index);
                 if (phi_val.local_index == local_idx && (int)phi_val.operands.size() >= 2) {
                     ir_ref backedge_ref = bc.value_map[phi_val.operands[1]];
+                    fprintf(stderr, "[OUTER_CARRY] Setting outer PHI back-edge: local_%d, backedge=v%d\n",
+                        local_idx, phi_val.operands[1]);
                     ir_PHI_SET_OP(outer_phi_ref, 2, backedge_ref);
                     break;
                 }
@@ -553,14 +558,17 @@ void IRBridge::handlePhi(BuildContext& bc, const Value& val) {
             // 切換到 outer loop 建 PHI
             ctx->control = outer_loop.loop_begin;
             ir_ref outer_phi = ir_PHI_2(IR_I32, ir_CONST_I32(0), IR_UNUSED);
+            fprintf(stderr, "[OUTER_PHI_BUILD] outer_phi=ref%d, ctx->control=%d\n", outer_phi, ctx->control);
+            // 用 COPY_HARD 包住 outer PHI，讓 optimizer 不折疊
+            ir_ref hard_copy = ir_emit2(ctx, IR_OPT(IR_COPY, IR_I32), outer_phi, IR_COPY_HARD);
             outer_loop.outer_carry_phis[local_idx] = outer_phi;
-            // 切回 inner loop
             ctx->control = inner_loop_begin;
             entry_val = outer_phi;
         }
 
         ir_ref inputs[2] = {entry_val, IR_UNUSED};
         ir_ref phi = ir_emit_N(ctx, IR_OPT(IR_PHI, IR_I32), 3);
+        fprintf(stderr, "[PHI_BUILD] v%zu: phi=ref%d, ctx->control=%d\n", i, phi, ctx->control);
         ir_set_op(ctx, phi, 1, ctx->control);
         ir_set_op(ctx, phi, 2, entry_val);
         ir_set_op(ctx, phi, 3, IR_UNUSED);        bc.value_map[i] = phi;
