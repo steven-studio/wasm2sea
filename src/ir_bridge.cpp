@@ -523,6 +523,16 @@ void IRBridge::handlePhi(BuildContext& bc, const Value& val) {
     if (val.operands.empty()) { TRACE("    ERROR: Phi with no operands\n\n"); return; }
     if (val.local_index >= 0) {
         ir_ref entry_val = bc.value_map[val.operands[0]];
+        ir_ref loop_begin_ref = ctx->control;  // 記錄 LOOP_BEGIN
+
+        // 如果 entry_val 是另一個 PHI，用 VSTORE/VLOAD 打破 PHI-PHI chain
+        if (!IR_IS_CONST_REF(entry_val) && ctx->ir_base[entry_val].op == IR_PHI) {
+            ir_ref tmp_var = ir_VAR(IR_I32, "sum_tmp");
+            ir_VSTORE(tmp_var, entry_val);
+            entry_val = ir_VLOAD_I32(tmp_var);
+            ctx->control = loop_begin_ref;  // 恢復 control 到 LOOP_BEGIN
+        }
+
         ir_ref phi = ir_PHI_2(IR_I32, entry_val, IR_UNUSED);
         bc.value_map[i] = phi;
         if (!loop_stack.empty()) loop_stack.back().phi_ids.push_back(i);

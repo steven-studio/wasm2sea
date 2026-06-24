@@ -763,45 +763,73 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
             }
                     
             // 掃描這個 loop body 會修改哪些 local
-            std::unordered_set<int> modified_locals;
-            std::unordered_set<int> reset_in_outer;   // 在 outer loop 開頭被重設的 local
+            std::unordered_set<int> modified_locals;  // 所有被修改的 local
+            std::unordered_set<int> read_before_write;    // 先 Get 才 Set 的 local
+            std::unordered_set<int> seen_get;
+
+            bool entered_inner = false;
+            std::unordered_set<int> set_before_inner;
 
             int depth = 1;
             for (size_t j = i + 1; j < code.size() && depth > 0; j++) {
-                if (code[j].op == WasmOp::Loop || 
-                    code[j].op == WasmOp::Block || 
-                    code[j].op == WasmOp::If) depth++;
-                else if (code[j].op == WasmOp::End) depth--;
-                if (depth == 1 && code[j].op == WasmOp::LocalSet)  // ← depth==1 才是當層
+                if (code[j].op == WasmOp::Loop || code[j].op == WasmOp::Block || code[j].op == WasmOp::If) {
+                    depth++;
+                    if (depth == 2) entered_inner = true;
+                } else if (code[j].op == WasmOp::End) depth--;
+                
+                if (depth == 1 && code[j].op == WasmOp::LocalGet)
+                    seen_get.insert(code[j].operand);
+                if (depth == 1 && code[j].op == WasmOp::LocalSet) {
                     modified_locals.insert(code[j].operand);
+                    if (!entered_inner)
+                        set_before_inner.insert(code[j].operand);
+                    if (depth == 1 && seen_get.count(code[j].operand))
+                        read_before_write.insert(code[j].operand);
+                }
+                if (depth > 1 && code[j].op == WasmOp::LocalSet) {
+                    if (!set_before_inner.count(code[j].operand)) {
+                        modified_locals.insert(code[j].operand);
+                    }
+                }
             }
 
+            fprintf(stderr, "[LOOP v%d] set_before_inner = {", loop_id);
+            for (int idx : set_before_inner) fprintf(stderr, " %d", idx);
+            fprintf(stderr, " }\n");
+            fprintf(stderr, "[LOOP v%d] modified_locals = {", loop_id);
+            for (int idx : modified_locals) fprintf(stderr, " %d", idx);
+            fprintf(stderr, " }\n");
+
+            // ✅ 修改：為所有被修改的 local 創建 PHI（不僅僅是 read_before_write）
             // 先確保所有會被 loop 修改的 local 都已經存在
             for (int idx : modified_locals) {
                 if (localVars.find(idx) == localVars.end()) {
                     int zero_id = newValue(Op::I32Const);
                     values[zero_id].constValue = 0;
                     localVars[idx] = zero_id;
-
-                    fprintf(stderr, "  [LOCAL INIT] local_%d = v%d Const(0)\n",
-                            idx, zero_id);
+                    fprintf(stderr, "  [LOCAL INIT] local_%d = v%d Const(0)\n", idx, zero_id);
                 }
             }
 
             // 再為所有會被修改的 local 建 loop-carried PHI
             for (int idx : modified_locals) {
+                if (set_before_inner.count(idx) && !read_before_write.count(idx))
+                    continue;  // 在 inner 前就被 Set，且不是先 Get 才 Set，跳過
                 int entry_val = localVars[idx];
-
                 int phi_id = newValue(Op::Phi);
                 values[phi_id].operands.push_back(entry_val);
                 values[phi_id].local_index = idx;
-
-                fprintf(stderr, "  [PHI CREATE] v%d = Phi(v%d) for local_%d\n",
-                        phi_id, entry_val, idx);
-
+                fprintf(stderr, "  [PHI CREATE] v%d = Phi(v%d) for local_%d\n", phi_id, entry_val, idx);
                 frame.loop_phis[idx] = phi_id;
                 localVars[idx] = phi_id;
             }
+
+            // 在 Loop 掃描後添加
+            fprintf(stderr, "  [DEBUG] modified_locals = {");
+            for (int idx : modified_locals) {
+                fprintf(stderr, " %d", idx);
+            }
+            fprintf(stderr, " }\n");
             
             control_stack.push_back(frame);
             break;
@@ -836,10 +864,26 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
                 for (auto& [idx, phi_id] : target.loop_phis) {
                     if (localVars.count(idx)) {
                         int cur = localVars[idx];
-                        if (cur != phi_id)
+                        // ✅ 重要：即使 cur == phi_id，也要添加（第一次回邊）
+                        // 但需要避免重複添加相同的值
+                        bool already_has = false;
+                        for (int existing : values[phi_id].operands) {
+                            if (existing == cur) {
+                                already_has = true;
+                                break;
+                            }
+                        }
+                        if (!already_has) {
                             values[phi_id].operands.push_back(cur);
+                            fprintf(stderr, "[BR_IF] Adding back-edge value v%d for local_%d to phi v%d\n",
+                                    cur, idx, phi_id);
+                        }
                     }
                 }
+                // ✅ 新增：對於在 loop 中被修改但還沒有 phi 的變量，創建 phi
+                // 這需要您提前掃描 loop body 來確定所有被修改的 local
+                // 或者可以在這裡動態創建
+
                 int br_if_id = newValue(Op::Br_if);
                 values[br_if_id].lhs = cond;
                 values[br_if_id].rhs = target.loop_start_id;
@@ -868,13 +912,29 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
             
             ControlFrame& target = control_stack[control_stack.size() - 1 - depth];
             
+            fprintf(stderr, "[BR_DEBUG] depth=%d, target.type=%d, loop_phis size=%zu\n",
+                    depth, target.type, target.loop_phis.size());
+            for (auto& [idx, phi_id] : target.loop_phis) {
+                fprintf(stderr, "  loop_phis[%d] = v%d\n", idx, phi_id);
+            }
+
             if (target.type == ControlFrame::Loop) {
                 // 更新 loop phi 回邊（跟 Br_if 一樣）
                 for (auto& [idx, phi_id] : target.loop_phis) {
                     if (localVars.count(idx)) {
                         int cur = localVars[idx];
-                        if (cur != phi_id)
+                        bool already_has = false;
+                        for (int existing : values[phi_id].operands) {
+                            if (existing == cur) {
+                                already_has = true;
+                                break;
+                            }
+                        }
+                        if (!already_has) {
                             values[phi_id].operands.push_back(cur);
+                            fprintf(stderr, "[BR] Adding back-edge value v%d for local_%d to phi v%d\n",
+                                    cur, idx, phi_id);
+                        }
                     }
                 }
                 int br_id = newValue(Op::Br);
