@@ -143,7 +143,7 @@ public:
             instructions.push_back({WasmOp::Else, 0});
             visitExpression(n->ifFalse);
         }
-        instructions.push_back({WasmOp::End, 0});
+        instructions.push_back({WasmOp::End, 2});
     }
 
     void visitLoop(Loop* n) {
@@ -177,11 +177,17 @@ public:
     }
 
     void visitBlock(Block* n) {
-        if (n->name.is()) label_stack.push_back(n->name);
+        if (n->name.is()) {
+            label_stack.push_back(n->name);
+            instructions.push_back({WasmOp::Block, (int)label_stack.size()});  // ← 加這行
+        }
         for (auto* expr : n->list) {
             visitExpression(expr);
         }
-        if (n->name.is()) label_stack.pop_back();
+        if (n->name.is()) {
+            label_stack.pop_back();
+            instructions.push_back({WasmOp::End, 1});  // ← 加對應的 End
+        }
     }
 
     void visitReturn(Return* n) {

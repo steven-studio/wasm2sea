@@ -75,6 +75,7 @@ public:
     void handleEnd(BuildContext& bc, const Value& val);
     void handleLoop(BuildContext& bc, const Value& val);
     void handleBrIf(BuildContext& bc, const Value& val);
+    void handleBr(BuildContext& bc, const Value& val);
     void handlePhi(BuildContext& bc, const Value& val);
     void handleReturn(BuildContext& bc, const Value& val);
     void handleSelect(BuildContext& bc, const Value& val);

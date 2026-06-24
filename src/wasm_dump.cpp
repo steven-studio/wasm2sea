@@ -37,6 +37,7 @@ static const char* opToString(WasmOp op) {
     case WasmOp::I32Ctz:    return "I32Ctz";
     case WasmOp::I32Popcnt: return "I32Popcnt";
     case WasmOp::Select:    return "Select";
+    case WasmOp::Block:     return "Block";
     case WasmOp::If:        return "If";
     case WasmOp::Else:      return "Else";
     case WasmOp::End:       return "End";
@@ -88,6 +89,10 @@ void dumpInstr(const Instr& instr, int indent) {
     case WasmOp::Drop:
         printf("Drop\n");
         break;
+
+    case WasmOp::Block:
+        printf("Block(depth=%d)\n", instr.operand);
+        break;
     
     // 无操作数的指令
     case WasmOp::I32Add:
@@ -120,10 +125,14 @@ void dumpInstr(const Instr& instr, int indent) {
     case WasmOp::Select:
     case WasmOp::If:
     case WasmOp::Else:
-    case WasmOp::End:
     case WasmOp::Loop:
     case WasmOp::Return:
         printf("%s\n", opToString(instr.op));
+        break;
+    case WasmOp::End:
+        if (instr.operand == 0) printf("End(loop)\n");
+        else if (instr.operand == 1) printf("End(block)\n");
+        else printf("End(if)\n");
         break;
     
     default:

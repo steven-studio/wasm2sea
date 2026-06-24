@@ -33,8 +33,11 @@ struct LoopInfo {
     ir_ref loop_begin;
     ir_ref entry_point;
     std::vector<int> phi_ids;
+    int loop_value_id;
+    ir_ref loop_exit = IR_UNUSED;
+    std::vector<ir_ref> exits;
 };
-std::stack<LoopInfo> loop_stack;
+std::vector<LoopInfo> loop_stack;
 
 struct BuildContext {
     ir_ctx* ctx;
@@ -385,22 +388,42 @@ void IRBridge::handleEnd(BuildContext& bc, const Value& val) {
     ir_ctx* ctx = bc.ctx;
     size_t i = bc.current_index;
     fprintf(stderr, "DEBUG: Op::End reached, if_stack.size()=%zu\n", if_stack.size());
-    if (if_stack.empty()) return;
-    IfInfo info = if_stack.top();
-    if_stack.pop();
-    if (info.has_else) {
-        ir_ref end_false = ir_END();
-        ir_MERGE_2(info.end_true, end_false);
-        TRACE("  v%zu = End (if-else) -> MERGE_2(ref %d, ref %d)\n\n", i, info.end_true, end_false);
-    } else {
-        if (info.true_branch_returns) {
-            ir_IF_FALSE(info.if_node);
-        } else {
-            ir_ref end_true = ir_END();
-            ir_IF_FALSE(info.if_node);
+    if (!if_stack.empty()) {
+        IfInfo info = if_stack.top();
+        if_stack.pop();
+
+        if (info.has_else) {
             ir_ref end_false = ir_END();
-            ir_MERGE_2(end_true, end_false);
+            ir_MERGE_2(info.end_true, end_false);
+        } else {
+            if (info.true_branch_returns) {
+                ir_IF_FALSE(info.if_node);
+            } else {
+                ir_ref end_true = ir_END();
+                ir_IF_FALSE(info.if_node);
+                ir_ref end_false = ir_END();
+                ir_MERGE_2(end_true, end_false);
+            }
         }
+    }
+
+    // block end：不要 pop loop_stack
+    if (val.constValue == 1) {
+        TRACE("  v%zu = End(block)\n", i);
+        return;
+    }
+
+    // loop end：只有這裡才 pop loop_stack
+    if (val.constValue == 0 && !loop_stack.empty()) {
+        LoopInfo loop = loop_stack.back();
+        loop_stack.pop_back();
+
+        if (!loop.exits.empty()) {
+            ir_BEGIN(loop.exits[0]);
+        }
+
+        TRACE("  v%zu = End(loop) exits=%zu\n", i, loop.exits.size());
+        return;
     }
 }
 
@@ -413,7 +436,8 @@ void IRBridge::handleLoop(BuildContext& bc, const Value& val) {
     LoopInfo info;
     info.loop_begin = loop_begin;
     info.entry_point = loop_begin;
-    loop_stack.push(info);
+    info.loop_value_id = (int)i;
+    loop_stack.push_back(info);
     bc.value_map[i] = loop_begin;
 }
 
@@ -423,7 +447,27 @@ void IRBridge::handleBrIf(BuildContext& bc, const Value& val) {
     if (val.lhs < 0 || val.lhs >= (int)i) return;
     ir_ref cond_ref = bc.value_map[val.lhs];
     if (loop_stack.empty()) { TRACE("    ERROR: Br_if without active loop!\n\n"); return; }
-    LoopInfo& loop_info = loop_stack.top();
+
+    ir_ref if_node = ir_IF(cond_ref);
+    
+    // 找對應的 loop（用 phi_ids 對 val.rhs）
+    if (val.constValue == 1) {
+        // br_if depth=1: break block / exit loop
+        ir_IF_TRUE(if_node);
+        ir_ref exit_end = ir_END();   // 這條是跳出 loop/block 的路
+        loop_stack.back().exits.push_back(exit_end);
+
+        ir_IF_FALSE(if_node);
+        // false 繼續跑 loop body
+
+        // 先不要 MERGE_SET_OP loop_begin
+        // 這不是 backedge
+        return;
+    }
+
+    // br_if depth=0: continue loop / backedge
+    LoopInfo& loop_info = loop_stack.back();
+
     for (int phi_id : loop_info.phi_ids) {
         const Value& phi_val = bc.values[phi_id];
         if (phi_val.operands.size() >= 2) {
@@ -432,12 +476,52 @@ void IRBridge::handleBrIf(BuildContext& bc, const Value& val) {
             ir_PHI_SET_OP(phi_ref, 2, backedge_ref);
         }
     }
-    ir_ref if_node = ir_IF(cond_ref);
+
     ir_IF_TRUE(if_node);
     ir_ref loop_end_ref = ir_LOOP_END();
     ir_MERGE_SET_OP(loop_info.loop_begin, 2, loop_end_ref);
     ir_IF_FALSE(if_node);
-    TRACE("  v%zu = Br_if(cond=v%d)\n\n", i, val.lhs);
+    TRACE("  v%zu = Br_if(cond=v%d) kind=loop_back\n", i, val.lhs);
+}
+
+void IRBridge::handleBr(BuildContext& bc, const Value& val) {
+    ir_ctx* ctx = bc.ctx;
+    size_t i = bc.current_index;
+    if (val.lhs < 0) return;  // Block target
+
+    // 找對應的 loop（用 phi_ids 對 val.rhs）
+    LoopInfo* target_loop = nullptr;
+    for (int k = (int)loop_stack.size() - 1; k >= 0; k--) {
+        if (loop_stack[k].loop_value_id == val.lhs) {
+            target_loop = &loop_stack[k];
+            break;
+        }
+    }
+    if (!target_loop && !loop_stack.empty()) target_loop = &loop_stack.back();
+    if (!target_loop) return;
+
+    for (int phi_id : target_loop->phi_ids) {
+        const Value& phi_val = bc.values[phi_id];
+        if ((int)phi_val.operands.size() >= 2) {
+            ir_PHI_SET_OP(bc.value_map[phi_id], 2, bc.value_map[phi_val.operands[1]]);
+        }
+    }
+
+    fprintf(stderr, "[BR] val.rhs=%d, found loop_begin=%d, loop_exit=%d\n", 
+        val.rhs, target_loop ? target_loop->loop_begin : -1,
+        target_loop ? target_loop->loop_exit : -1);
+
+    if (target_loop->loop_exit != IR_UNUSED) {
+        ir_ref end_body = ir_END();  // ← 先建，這時還有 control
+        ir_BEGIN(target_loop->loop_exit);                    // 切換到 exit 路徑
+        ir_ref loop_end_ref = ir_LOOP_END();                 // 在 exit 路徑建 back-edge
+        ir_MERGE_SET_OP(target_loop->loop_begin, 2, loop_end_ref);
+        ir_MERGE_2(loop_end_ref, end_body);                  // merge exit 和 body
+    } else {
+        ir_ref loop_end_ref = ir_LOOP_END();
+        ir_MERGE_SET_OP(target_loop->loop_begin, 2, loop_end_ref);
+    }
+    TRACE("  v%zu = Br -> LOOP_END\n\n", i);
 }
 
 void IRBridge::handlePhi(BuildContext& bc, const Value& val) {
@@ -448,7 +532,7 @@ void IRBridge::handlePhi(BuildContext& bc, const Value& val) {
         ir_ref entry_val = bc.value_map[val.operands[0]];
         ir_ref phi = ir_PHI_2(IR_I32, entry_val, IR_UNUSED);
         bc.value_map[i] = phi;
-        if (!loop_stack.empty()) loop_stack.top().phi_ids.push_back(i);
+        if (!loop_stack.empty()) loop_stack.back().phi_ids.push_back(i);
         TRACE("  v%zu = Phi (Loop) -> ref %d\n\n", i, phi);
     } else {
         if (val.operands.size() != 2) { TRACE("    ERROR: If Phi should have exactly 2 operands\n\n"); return; }
@@ -658,6 +742,7 @@ static const std::unordered_map<Op, HandlerFn> kDispatchTable = {
     { Op::End,            &IRBridge::handleEnd },
     { Op::Loop,           &IRBridge::handleLoop },
     { Op::Br_if,          &IRBridge::handleBrIf },
+    { Op::Br,             &IRBridge::handleBr },    
     { Op::Phi,            &IRBridge::handlePhi },
     { Op::Return,         &IRBridge::handleReturn },
     { Op::Select,         &IRBridge::handleSelect },
@@ -693,7 +778,7 @@ IRFunction* IRBridge::build(const ValueIR& values,
     TRACE("Total ValueIR entries: %zu\n\n", values.size());
 
     while (!if_stack.empty()) if_stack.pop();
-    while (!loop_stack.empty()) loop_stack.pop();
+    while (!loop_stack.empty()) loop_stack.pop_back();
     ir_init(ctx_, IR_FUNCTION, 128, 128);
 
     ir_START();

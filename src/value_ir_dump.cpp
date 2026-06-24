@@ -49,8 +49,11 @@ void dumpValueIR(const ValueIR& values) {
             std::cout << "(v" << v.lhs << ")";  // 显示条件
             break;
         case Op::Else:
+            break;
         case Op::End:
-            // 这两个没有参数，保持原样
+            if (v.constValue == 0) std::cout << "(loop)";
+            else if (v.constValue == 1) std::cout << "(block)";
+            else if (v.constValue == 2) std::cout << "(if)";
             break;
         case Op::Select:
             // Select(condition, false_val, true_val)
@@ -71,7 +74,17 @@ void dumpValueIR(const ValueIR& values) {
             break;
         case Op::Br_if:
             std::cout << "(cond: v" << v.lhs 
-                    << ", target: v" << v.rhs << ")";
+                    << ", target: v" << v.rhs;
+            if (v.rhs >= 0)
+                std::cout << ", kind: loop_back)";
+            else
+                std::cout << ", kind: block_exit)";
+            break;
+        case Op::Br:
+            if (v.lhs >= 0)
+                std::cout << "(target: v" << v.lhs << ", kind: loop_back)";
+            else
+                std::cout << "(kind: block/if_exit)";
             break;
         case Op::Return:
             std::cout << "(v" << v.lhs << ")";

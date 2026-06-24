@@ -1,5 +1,6 @@
 #include "wasm_lower.hpp"
 #include <unordered_map>
+#include <unordered_set>
 #include <functional>
 
 ValueIR lowerWasmToSsa(const InstrSeq& code,
@@ -166,11 +167,15 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
             control_stack.pop_back();
             
             if (frame.type == ControlFrame::Loop) {
-                
-                // 只需創建 End 節點
+                // for (auto& [idx, phi_id] : frame.loop_phis) {
+                //     localVars[idx] = phi_id;
+                // }
+
                 int end_id = newValue(Op::End);
+                values[end_id].constValue = 0;   // 0 = loop end
+
                 char buf[100];
-                sprintf(buf, "v%d = End", end_id);
+                sprintf(buf, "v%d = End(loop)", end_id);
                 printState("End", buf);
             } else {
                 // ✅ 保存 else 分支结束时的 locals
@@ -187,23 +192,34 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
                 
                 // ✅ 只创建 End
                 int end_id = newValue(Op::End);
+
+                if (frame.type == ControlFrame::Block) {
+                    values[end_id].constValue = 1;   // 1 = block end
+                } else if (frame.type == ControlFrame::If) {
+                    values[end_id].constValue = 2;   // 2 = if end
+                }
                 
                 char buf[200];
+
+                const char* kind =
+                    frame.type == ControlFrame::Block ? "block" :
+                    frame.type == ControlFrame::If ? "if" : "unknown";
                 
                 // ✅ 如果是 expression-if（有返回值），创建 Phi
                 if (!frame.then_values.empty() && !frame.else_values.empty()) {
                     int phi_id = newValue(Op::Phi);
+                    values[phi_id].local_index = -1;
                     values[phi_id].operands = {
                         frame.then_values[0],
                         frame.else_values[0]
                     };
                     stack.push_back(phi_id);
                     
-                    sprintf(buf, "v%d = End, v%d = Phi(v%d, v%d)", 
-                            end_id, phi_id, 
+                    sprintf(buf, "v%d = End(%s), v%d = Phi(v%d, v%d)",
+                            end_id, kind, phi_id,
                             frame.then_values[0], frame.else_values[0]);
                 } else {
-                    sprintf(buf, "v%d = End", end_id);
+                    sprintf(buf, "v%d = End(%s)", end_id, kind);
                 }
                 
                 // 合併被修改的 locals
@@ -332,7 +348,7 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
             break;
         }
         case WasmOp::I64Const: {
-            int id = newValue(Op::I32Const);  // 暫時複用，之後改
+            int id = newValue(Op::I64Const);  // 暫時複用，之後改
             values[id].constValue = ins.i64operand;
             values[id].type = ValueType::I64;
             stack.push_back(id);
@@ -745,16 +761,41 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
                     localVars[i] = id;
                 }
             }
-            
-            // 暂时不创建 Phi，等到循环结束时再根据实际情况创建
-            // 只记录循环开始时的局部变量值
-            for (auto& [idx, val] : localVars) {
+                    
+            // 掃描這個 loop body 會修改哪些 local
+            std::unordered_set<int> modified_locals;
+            int depth = 1;
+            for (size_t j = i + 1; j < code.size() && depth > 0; j++) {
+                if (code[j].op == WasmOp::Loop || 
+                    code[j].op == WasmOp::Block || 
+                    code[j].op == WasmOp::If) depth++;
+                else if (code[j].op == WasmOp::End) depth--;
+                if (depth > 0 && code[j].op == WasmOp::LocalSet)
+                    modified_locals.insert(code[j].operand);
+            }
+
+            // 先確保所有會被 loop 修改的 local 都已經存在
+            for (int idx : modified_locals) {
+                if (localVars.find(idx) == localVars.end()) {
+                    int zero_id = newValue(Op::I32Const);
+                    values[zero_id].constValue = 0;
+                    localVars[idx] = zero_id;
+
+                    fprintf(stderr, "  [LOCAL INIT] local_%d = v%d Const(0)\n",
+                            idx, zero_id);
+                }
+            }
+
+            // 再為所有會被修改的 local 建 loop-carried PHI
+            for (int idx : modified_locals) {
+                int entry_val = localVars[idx];
+
                 int phi_id = newValue(Op::Phi);
-                values[phi_id].operands.push_back(val);
-                values[phi_id].local_index = idx;  // ← 记录局部变量索引
-                
-                fprintf(stderr, "  [PHI CREATE] v%d = Phi(v%d) for local_%d\n",   // ✅ 添加
-                        phi_id, val, idx);
+                values[phi_id].operands.push_back(entry_val);
+                values[phi_id].local_index = idx;
+
+                fprintf(stderr, "  [PHI CREATE] v%d = Phi(v%d) for local_%d\n",
+                        phi_id, entry_val, idx);
 
                 frame.loop_phis[idx] = phi_id;
                 localVars[idx] = phi_id;
@@ -781,34 +822,34 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
             
             int depth = ins.operand;
             if (depth >= (int)control_stack.size()) break;
-            
+                    
+            fprintf(stderr, "[BR_IF] depth=%d, control_stack size=%zu, target type=%d\n",
+                ins.operand, control_stack.size(),
+                (int)control_stack[control_stack.size() - 1 - ins.operand].type);
+
             ControlFrame& target = control_stack[control_stack.size() - 1 - depth];
             
             if (target.type == ControlFrame::Loop) {
-                fprintf(stderr, "[BR_IF] Updating Phi backedges:\n");  // ← 你沒加這些！
-
-                // 更新 Phi 的回边
+                // br_if 0：continue loop
                 for (auto& [idx, phi_id] : target.loop_phis) {
                     if (localVars.count(idx)) {
-                        int current_val = localVars[idx];
-                        // 只有当前值不是 Phi 自己时才添加回边
-                        if (current_val != phi_id) {  // ← 关键检查
-                            values[phi_id].operands.push_back(current_val);
-
-                            fprintf(stderr, "  local_%d: v%d += backedge(v%d) -> Phi(v%d, v%d)\n",
-                                    idx, phi_id, current_val, 
-                                    values[phi_id].operands[0], current_val);                            
-                        } else {
-                            fprintf(stderr, "  local_%d: v%d SKIP (not modified, stays Phi(v%d))\n",
-                                    idx, phi_id, values[phi_id].operands[0]);
-                        }
+                        int cur = localVars[idx];
+                        if (cur != phi_id)
+                            values[phi_id].operands.push_back(cur);
                     }
                 }
-                fprintf(stderr, "\n");
-
                 int br_if_id = newValue(Op::Br_if);
                 values[br_if_id].lhs = cond;
                 values[br_if_id].rhs = target.loop_start_id;
+                values[br_if_id].constValue = 0; // loop_back
+            } else if (target.type == ControlFrame::Block) {
+                // br_if 1：break block / exit loop
+                int br_if_id = newValue(Op::Br_if);
+                values[br_if_id].lhs = cond;
+                values[br_if_id].rhs = -1;
+                values[br_if_id].constValue = 1; // loop_exit
+
+                // 注意：這裡不要更新 loop phi backedge
             }
             break;
         }
@@ -830,12 +871,17 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
                 }
                 int br_id = newValue(Op::Br);
                 values[br_id].lhs = target.loop_start_id;
+                int first_phi_id = -1;
+                if (!target.loop_phis.empty())
+                    first_phi_id = target.loop_phis.begin()->second;
+                values[br_id].rhs = first_phi_id;
             } else {
                 // Block/If: 把 stack top 當作 block 的回傳值存起來
                 if (!stack.empty())
                     target.then_values.push_back(stack.back());
                 int br_id = newValue(Op::Br);
                 values[br_id].lhs = -1;
+                values[br_id].rhs = -1;
             }
             // Br 之後是 dead code，清空 stack 到 target 的 stack_size
             stack.resize(target.stack_size);
@@ -1069,6 +1115,7 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
             values[i].op == Op::Else ||
             values[i].op == Op::End ||
             values[i].op == Op::Br_if ||
+            values[i].op == Op::Br ||
             values[i].op == Op::LocalSet ||
             values[i].op == Op::LocalGet) {
             used[i] = true;
