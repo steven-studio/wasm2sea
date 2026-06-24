@@ -526,11 +526,13 @@ void IRBridge::handlePhi(BuildContext& bc, const Value& val) {
         ir_ref loop_begin_ref = ctx->control;  // 記錄 LOOP_BEGIN
 
         // 如果 entry_val 是另一個 PHI，用 VSTORE/VLOAD 打破 PHI-PHI chain
-        if (!IR_IS_CONST_REF(entry_val) && ctx->ir_base[entry_val].op == IR_PHI) {
-            ir_ref tmp_var = ir_VAR(IR_I32, "sum_tmp");
-            ir_VSTORE(tmp_var, entry_val);
-            entry_val = ir_VLOAD_I32(tmp_var);
-            ctx->control = loop_begin_ref;  // 恢復 control 到 LOOP_BEGIN
+        if (val.use_vload_entry) {
+            // 改從 local VAR 做 VLOAD
+            int local_idx = val.local_index;
+            if (local_idx >= 0 && bc.local_vars.count(local_idx)) {
+                entry_val = ir_VLOAD_I32(bc.local_vars[local_idx]);
+                ctx->control = loop_begin_ref;  // 恢復 control
+            }
         }
 
         ir_ref phi = ir_PHI_2(IR_I32, entry_val, IR_UNUSED);
@@ -846,8 +848,13 @@ IRFunction* IRBridge::build(const ValueIR& values,
         ir_ref var = ir_VAR(t, name);
         local_vars[idx] = var;
         auto it = param_index_to_value_id.find(idx);
-        if (it != param_index_to_value_id.end())
+        if (it != param_index_to_value_id.end()) {
             ir_VSTORE(var, value_map[it->second]);
+        } else {
+            // 非 param 的 local，初始化為 0
+            ir_ref zero = ir_CONST_I32(0);
+            ir_VSTORE(var, zero);
+        }
     }
 
     // 主迴圈

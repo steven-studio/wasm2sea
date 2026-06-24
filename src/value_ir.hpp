@@ -95,7 +95,7 @@ struct Value {
     std::vector<int> operands;
     
     int local_index = -1;  // ✅ 初始化为 -1 表示"未设置"
-
+    bool use_vload_entry = false;  // inner-only PHI 需要從 VAR VLOAD 初始值
     std::string callee_name;  // ← 加這行
 
     // 建構函式（可選）

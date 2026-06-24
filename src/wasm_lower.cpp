@@ -815,10 +815,23 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
             for (int idx : modified_locals) {
                 if (set_before_inner.count(idx) && !read_before_write.count(idx))
                     continue;  // 在 inner 前就被 Set，且不是先 Get 才 Set，跳過
+                if (!set_before_inner.count(idx) && !read_before_write.count(idx))
+                    continue;  // inner-only modified，用 VLOAD 處理，不建 outer PHI            
                 int entry_val = localVars[idx];
                 int phi_id = newValue(Op::Phi);
                 values[phi_id].operands.push_back(entry_val);
                 values[phi_id].local_index = idx;
+                // 檢查外層 loop 是否沒有為這個 idx 建 PHI（代表需要從 VAR VLOAD）
+                for (auto& outer_frame : control_stack) {
+                    if (outer_frame.type == ControlFrame::Loop && 
+                        outer_frame.loop_phis.count(idx) == 0) {
+                        values[phi_id].use_vload_entry = true;
+                        break;
+                    }
+                }
+                fprintf(stderr, "  [PHI CREATE] v%d = Phi(v%d) for local_%d%s\n", 
+                        phi_id, entry_val, idx,
+                        values[phi_id].use_vload_entry ? " [use_vload]" : "");
                 fprintf(stderr, "  [PHI CREATE] v%d = Phi(v%d) for local_%d\n", phi_id, entry_val, idx);
                 frame.loop_phis[idx] = phi_id;
                 localVars[idx] = phi_id;
