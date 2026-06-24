@@ -3,31 +3,48 @@
 #include <unordered_set>
 #include <functional>
 
-ValueIR lowerWasmToSsa(const InstrSeq& code,
-                        const std::vector<std::string>& funcNames) {
+// ============================================================
+// LowerContext: 把所有 lowering 狀態集中在一個結構裡
+// ============================================================
+
+struct ControlFrame {
+    enum Type { If, Loop, Block } type;
+    int if_id = -1;
+    int cond_id = -1;
+    std::vector<int> then_values;
+    std::vector<int> else_values;
+    size_t stack_size = 0;
+    int loop_start_id = -1;
+    std::unordered_map<int, int> loop_phis;
+    bool has_else = false;
+    std::unordered_map<int, int> entry_locals;
+    std::unordered_map<int, int> then_locals;
+    std::unordered_map<int, int> else_locals;
+    std::unordered_set<int> set_before_inner;
+};
+
+struct LowerContext {
     ValueIR values;
-    std::vector<int> stack;  // 存 SSA id
+    std::vector<int> stack;
     std::unordered_map<int, int> localVars;
-    
-    // 读取函数元信息（参数数量）
+    std::vector<ControlFrame> control_stack;
+    const InstrSeq& code;
+    const std::vector<std::string>& funcNames;
     size_t numParams = 0;
-    size_t start_idx = 0;
-    
-    if (!code.empty() && code[0].op == WasmOp::FuncInfo) {
-        numParams = static_cast<size_t>(code[0].operand);
-        start_idx = 1;
-    }
-    
-    auto newValue = [&](Op op) -> int {
+
+    LowerContext(const InstrSeq& code, const std::vector<std::string>& funcNames)
+        : code(code), funcNames(funcNames) {}
+
+    int newValue(Op op) {
         int id = static_cast<int>(values.size());
         Value v;
         v.id = id;
         v.op = op;
         values.push_back(v);
         return id;
-    };
+    }
 
-    auto safePop = [&]() -> int {
+    int safePop() {
         if (stack.empty()) {
             int id = newValue(Op::I32Const);
             values[id].constValue = 0;
@@ -36,1237 +53,730 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
         int v = stack.back();
         stack.pop_back();
         return v;
-    };
+    }
 
-    // 控制流栈：记录 if/else 的信息
-    struct ControlFrame {
-        enum Type { If, Loop, Block } type;
-        int if_id;           // if 指令的 value id
-        int cond_id;         // 条件的 value id
-        std::vector<int> then_values;  // then 分支产生的值
-        std::vector<int> else_values;  // else 分支产生的值
-        size_t stack_size;   // if 之前的栈大小
+    // 建立二元運算節點，push 結果
+    int emitBinary(Op op, ValueType type = ValueType::I32) {
+        int rhs = safePop(), lhs = safePop();
+        int id = newValue(op);
+        values[id].lhs = lhs;
+        values[id].rhs = rhs;
+        values[id].type = type;
+        stack.push_back(id);
+        return id;
+    }
 
-        // Loop 专用
-        int loop_start_id;                        // 循环开始的 value id
-        std::unordered_map<int, int> loop_phis;   // local_index -> phi_value_id
-        
-        bool has_else = false;  // ✅ 新增：标记是否有 else 分支
+    // 建立一元運算節點，push 結果
+    int emitUnary(Op op, ValueType type = ValueType::I32) {
+        int val = safePop();
+        int id = newValue(op);
+        values[id].lhs = val;
+        values[id].type = type;
+        stack.push_back(id);
+        return id;
+    }
 
-        // ✅ 新增：If 专用 - 保存 if 开始时的局部变量
-        std::unordered_map<int, int> entry_locals;  // if 入口時的局部變量
-        std::unordered_map<int, int> then_locals;   // ← 新增：then 结束时
-        std::unordered_map<int, int> else_locals;   // ← 新增：else 结束时
+    // 更新 loop phi 的 back-edge（Br / Br_if 共用）
+    void updateLoopPhiBackedges(ControlFrame& target) {
+        for (auto& [idx, phi_id] : target.loop_phis) {
+            if (!localVars.count(idx)) continue;
+            int cur = localVars[idx];
+            bool already_has = false;
+            for (int existing : values[phi_id].operands)
+                if (existing == cur) { already_has = true; break; }
+            if (!already_has)
+                values[phi_id].operands.push_back(cur);
+        }
+    }
+};
 
-        std::unordered_set<int> set_before_inner;  // outer loop 在 inner 之前就 Set 的 local
-    };
-    std::vector<ControlFrame> control_stack;
+// ============================================================
+// Handler 型別
+// ============================================================
 
-    auto printState = [&](const std::string& instrName, const std::string& ssaGenerated = "") {
-        fprintf(stderr, "[TRACE] After %s:\n", instrName.c_str());
-        
-        // 打印 localVars
-        fprintf(stderr, "  localVars = {");
-        if (localVars.empty()) {
-            fprintf(stderr, " }");
-        } else {
-            for (auto& [idx, vid] : localVars) {
-                fprintf(stderr, " %d→v%d", idx, vid);
+using HandlerFn = void(*)(LowerContext& ctx, const Instr& ins, size_t idx);
+
+// ============================================================
+// 算術 / 比較 / 位元運算（透過 emitBinary 統一處理）
+// ============================================================
+
+#define MAKE_BINARY(wasmOp, irOp, vtype) \
+    static void handle_##wasmOp(LowerContext& ctx, const Instr&, size_t) { \
+        ctx.emitBinary(Op::irOp, ValueType::vtype); \
+    }
+
+MAKE_BINARY(I32Add,  Add,   I32)
+MAKE_BINARY(I32Sub,  Sub,   I32)
+MAKE_BINARY(I32Mul,  Mul,   I32)
+MAKE_BINARY(I32DivS, Div_S, I32)
+MAKE_BINARY(I32DivU, Div_U, I32)
+MAKE_BINARY(I32RemS, Rem_S, I32)
+MAKE_BINARY(I32RemU, Rem_U, I32)
+MAKE_BINARY(I32Eq,   Eq,    I32)
+MAKE_BINARY(I32Ne,   Ne,    I32)
+MAKE_BINARY(I32LtS,  Lt_S,  I32)
+MAKE_BINARY(I32GtS,  Gt_S,  I32)
+MAKE_BINARY(I32LeS,  Le_S,  I32)
+MAKE_BINARY(I32GeS,  Ge_S,  I32)
+MAKE_BINARY(I32LtU,  Lt_U,  I32)
+MAKE_BINARY(I32GtU,  Gt_U,  I32)
+MAKE_BINARY(I32LeU,  Le_U,  I32)
+MAKE_BINARY(I32GeU,  Ge_U,  I32)
+MAKE_BINARY(I32And,  And,   I32)
+MAKE_BINARY(I32Or,   Or,    I32)
+MAKE_BINARY(I32Xor,  Xor,   I32)
+MAKE_BINARY(I32Shl,  Shl,   I32)
+MAKE_BINARY(I32ShrS, Shr_S, I32)
+MAKE_BINARY(I32ShrU, Shr_U, I32)
+MAKE_BINARY(I64Add,  Add,   I64)
+MAKE_BINARY(I64Sub,  Sub,   I64)
+MAKE_BINARY(I64Mul,  Mul,   I64)
+MAKE_BINARY(I64DivS, Div_S, I64)
+MAKE_BINARY(I64RemS, Rem_S, I64)
+MAKE_BINARY(F64Add,  F64Add, I32)
+MAKE_BINARY(F64Sub,  F64Sub, I32)
+MAKE_BINARY(F64Mul,  F64Mul, I32)
+MAKE_BINARY(F64Div,  F64Div, I32)
+
+#define MAKE_UNARY(wasmOp, irOp, vtype) \
+    static void handle_##wasmOp(LowerContext& ctx, const Instr&, size_t) { \
+        ctx.emitUnary(Op::irOp, ValueType::vtype); \
+    }
+
+MAKE_UNARY(I32Eqz,       Eqz,          I32)
+MAKE_UNARY(I32Clz,       Clz,          I32)
+MAKE_UNARY(I32WrapI64,   I32WrapI64,   I32)
+MAKE_UNARY(I64ExtendI32S,I64ExtendI32S,I64)
+MAKE_UNARY(I64ExtendI32U,I64ExtendI32U,I64)
+MAKE_UNARY(F64ConvertI32S,F64ConvertI32S,I32)
+MAKE_UNARY(F64ConvertI32U,F64ConvertI32U,I32)
+MAKE_UNARY(F64ConvertI64S,F64ConvertI64S,I32)
+MAKE_UNARY(F64ConvertI64U,F64ConvertI64U,I32)
+MAKE_UNARY(I32TruncF64S, I32TruncF64S, I32)
+MAKE_UNARY(I32TruncF64U, I32TruncF64U, I32)
+MAKE_UNARY(I64TruncF64S, I64TruncF64S, I64)
+MAKE_UNARY(I64TruncF64U, I64TruncF64U, I64)
+
+// ============================================================
+// 常數
+// ============================================================
+
+static void handle_I32Const(LowerContext& ctx, const Instr& ins, size_t) {
+    int id = ctx.newValue(Op::I32Const);
+    ctx.values[id].constValue = ins.operand;
+    ctx.stack.push_back(id);
+}
+
+static void handle_I64Const(LowerContext& ctx, const Instr& ins, size_t) {
+    int id = ctx.newValue(Op::I64Const);
+    ctx.values[id].constValue = ins.i64operand;
+    ctx.values[id].type = ValueType::I64;
+    ctx.stack.push_back(id);
+}
+
+static void handle_F64Const(LowerContext& ctx, const Instr& ins, size_t) {
+    int id = ctx.newValue(Op::F64Const);
+    ctx.values[id].constValue = ins.foperand;
+    ctx.stack.push_back(id);
+}
+
+// ============================================================
+// Local Get / Set / Tee
+// ============================================================
+
+static void handle_LocalGet(LowerContext& ctx, const Instr& ins, size_t) {
+    auto it = ctx.localVars.find(ins.operand);
+    if (it != ctx.localVars.end()) {
+        ctx.stack.push_back(it->second);
+        return;
+    }
+    int id;
+    if (ins.operand < (int)ctx.numParams) {
+        id = ctx.newValue(Op::Param);
+        ctx.values[id].paramIndex = ins.operand;
+    } else {
+        id = ctx.newValue(Op::I32Const);
+        ctx.values[id].constValue = 0;
+    }
+    ctx.localVars[ins.operand] = id;
+    ctx.stack.push_back(id);
+}
+
+static void handle_LocalSet(LowerContext& ctx, const Instr& ins, size_t) {
+    if (ctx.stack.empty()) return;
+    int val = ctx.stack.back();
+    ctx.stack.pop_back();
+    ctx.localVars[ins.operand] = val;
+    int set_id = ctx.newValue(Op::LocalSet);
+    ctx.values[set_id].paramIndex = ins.operand;
+    ctx.values[set_id].lhs = val;
+}
+
+static void handle_LocalTee(LowerContext& ctx, const Instr& ins, size_t) {
+    if (ctx.stack.empty()) return;
+    ctx.localVars[ins.operand] = ctx.stack.back();
+}
+
+// ============================================================
+// 控制流：If / Else / End
+// ============================================================
+
+static void handle_If(LowerContext& ctx, const Instr&, size_t) {
+    if (ctx.stack.empty()) return;
+    int cond = ctx.stack.back(); ctx.stack.pop_back();
+    int if_id = ctx.newValue(Op::If);
+    ctx.values[if_id].lhs = cond;
+    ControlFrame frame;
+    frame.type = ControlFrame::If;
+    frame.if_id = if_id;
+    frame.cond_id = cond;
+    frame.stack_size = ctx.stack.size();
+    frame.entry_locals = ctx.localVars;
+    ctx.control_stack.push_back(std::move(frame));
+}
+
+static void handle_Else(LowerContext& ctx, const Instr&, size_t) {
+    if (ctx.control_stack.empty()) return;
+    auto& top = ctx.control_stack.back();
+    top.then_locals = ctx.localVars;
+    top.has_else = true;
+    if (ctx.stack.size() > top.stack_size)
+        top.then_values.push_back(ctx.stack.back()), ctx.stack.pop_back();
+    ctx.localVars = top.entry_locals;
+    ctx.newValue(Op::Else);
+}
+
+static void handle_End(LowerContext& ctx, const Instr&, size_t) {
+    if (ctx.control_stack.empty()) return;
+    if (ctx.control_stack.back().type == ControlFrame::If && !ctx.control_stack.back().has_else)
+        ctx.control_stack.back().then_locals = ctx.localVars;
+
+    ControlFrame frame = ctx.control_stack.back();
+    ctx.control_stack.pop_back();
+
+    if (frame.type == ControlFrame::Loop) {
+        int end_id = ctx.newValue(Op::End);
+        ctx.values[end_id].constValue = 0;
+        return;
+    }
+
+    frame.else_locals = ctx.localVars;
+    if (ctx.stack.size() > frame.stack_size)
+        frame.else_values.push_back(ctx.stack.back()), ctx.stack.pop_back();
+
+    int end_id = ctx.newValue(Op::End);
+    ctx.values[end_id].constValue = (frame.type == ControlFrame::Block) ? 1 : 2;
+
+    // expression-if 回傳值
+    if (!frame.then_values.empty() && !frame.else_values.empty()) {
+        int phi_id = ctx.newValue(Op::Phi);
+        ctx.values[phi_id].local_index = -1;
+        ctx.values[phi_id].operands = {frame.then_values[0], frame.else_values[0]};
+        ctx.stack.push_back(phi_id);
+    }
+
+    // 合併被修改的 locals
+    if (frame.has_else) {
+        for (auto& [idx, then_val] : frame.then_locals) {
+            auto else_it = frame.else_locals.find(idx);
+            auto entry_it = frame.entry_locals.find(idx);
+            int else_val = (else_it != frame.else_locals.end())
+                ? else_it->second
+                : (entry_it != frame.entry_locals.end() ? entry_it->second : then_val);
+            if (then_val != else_val) {
+                int phi_id = ctx.newValue(Op::Phi);
+                ctx.values[phi_id].local_index = -1;
+                ctx.values[phi_id].operands = {then_val, else_val};
+                ctx.localVars[idx] = phi_id;
             }
-            fprintf(stderr, " }");
         }
-        fprintf(stderr, "\n");
-        
-        // 打印 stack
-        fprintf(stderr, "  stack = [");
-        for (size_t i = 0; i < stack.size(); i++) {
-            fprintf(stderr, "v%d", stack[i]);
-            if (i < stack.size() - 1) fprintf(stderr, ", ");
-        }
-        fprintf(stderr, "]\n");
-        
-        // 打印 SSA Generated（如果提供了）
-        if (!ssaGenerated.empty()) {
-            fprintf(stderr, "  SSA Generated: %s\n", ssaGenerated.c_str());
-        } else {
-            fprintf(stderr, "  SSA Generated: -\n");
-        }
-        fprintf(stderr, "\n");
-    };
-
-    // 打印初始状态
-    fprintf(stderr, "=== SSA Lowering Trace ===\n");
-    fprintf(stderr, "numParams = %zu\n\n", numParams);
-
-    for (size_t i = start_idx; i < code.size(); i++) {
-        auto& ins = code[i];
-
-        switch (ins.op) {
-
-        case WasmOp::If: {
-            // 弹出条件
-            if (stack.empty()) break;
-            int cond = stack.back();
-            stack.pop_back();
-            
-            // 创建 If 节点
-            int if_id = newValue(Op::If);
-            values[if_id].lhs = cond;
-            
-            // 记录控制流信息
-            ControlFrame frame;
-            frame.type = ControlFrame::If;  // ✅ 設置類型
-            frame.if_id = if_id;
-            frame.cond_id = cond;
-            frame.stack_size = stack.size();
-
-            // ✅ 保存 if 開始時的 localVars
-            frame.entry_locals = localVars;
-
-            control_stack.push_back(frame);
-    
-            char buf[100];
-            sprintf(buf, "v%d = If(v%d)", if_id, cond);
-            printState("If", buf);
-            break;
-        }
-
-        case WasmOp::Else: {
-            if (control_stack.empty()) break;
-            
-            // ✅ 保存 then 分支结束时的 locals
-            control_stack.back().then_locals = localVars;
-            control_stack.back().has_else = true;  // 标记有 else 分支
-
-            // 记录 then 分支的结果
-            if (stack.size() > control_stack.back().stack_size) {
-                int then_val = stack.back();
-                stack.pop_back();
-                control_stack.back().then_values.push_back(then_val);
+    } else {
+        for (auto& [idx, then_val] : frame.then_locals) {
+            auto entry_it = frame.entry_locals.find(idx);
+            if (entry_it != frame.entry_locals.end() && entry_it->second != then_val) {
+                int phi_id = ctx.newValue(Op::Phi);
+                ctx.values[phi_id].local_index = -1;
+                ctx.values[phi_id].operands = {then_val, entry_it->second};
+                ctx.localVars[idx] = phi_id;
             }
-            
-            // ✅ 恢复到 if 入口的 locals（开始 else 分支）
-            localVars = control_stack.back().entry_locals;
-
-            // 创建 Else 节点
-            int else_id = newValue(Op::Else);
-    
-            char buf[100];
-            sprintf(buf, "v%d = Else", else_id);
-            printState("Else", buf);
-            break;
         }
+    }
+}
 
-        case WasmOp::End: {
-            if (control_stack.empty()) break;
-            
-            // no-else 情況：then_locals 還沒設過，現在設
-            if (control_stack.back().type == ControlFrame::If && 
-                !control_stack.back().has_else) {
-                control_stack.back().then_locals = localVars;
-            }
-            ControlFrame frame = control_stack.back();
-            control_stack.pop_back();
-            
-            if (frame.type == ControlFrame::Loop) {
-                // for (auto& [idx, phi_id] : frame.loop_phis) {
-                //     localVars[idx] = phi_id;
-                // }
+// ============================================================
+// 控制流：Loop / Block
+// ============================================================
 
-                int end_id = newValue(Op::End);
-                values[end_id].constValue = 0;   // 0 = loop end
+// 掃描 loop body 裡會被修改的 locals
+struct LoopScanResult {
+    std::unordered_set<int> modified_locals;
+    std::unordered_set<int> read_before_write;
+    std::unordered_set<int> set_before_inner;
+};
 
-                char buf[100];
-                sprintf(buf, "v%d = End(loop)", end_id);
-                printState("End", buf);
-            } else {
-                // ✅ 保存 else 分支结束时的 locals
-                frame.else_locals = localVars;
-                
-                // 记录 else 分支的返回值
-                if (stack.size() > frame.stack_size) {
-                    int else_val = stack.back();
-                    stack.pop_back();
-                    frame.else_values.push_back(else_val);
-                }
-                
-                // ❌ 删掉所有 Select 生成逻辑！
-                
-                // ✅ 只创建 End
-                int end_id = newValue(Op::End);
+static LoopScanResult scanLoopBody(const InstrSeq& code, size_t loop_start) {
+    LoopScanResult res;
+    std::unordered_set<int> seen_get;
+    bool entered_inner = false;
+    int depth = 1;
 
-                if (frame.type == ControlFrame::Block) {
-                    values[end_id].constValue = 1;   // 1 = block end
-                } else if (frame.type == ControlFrame::If) {
-                    values[end_id].constValue = 2;   // 2 = if end
-                }
-                
-                char buf[200];
-
-                const char* kind =
-                    frame.type == ControlFrame::Block ? "block" :
-                    frame.type == ControlFrame::If ? "if" : "unknown";
-                
-                // ✅ 如果是 expression-if（有返回值），创建 Phi
-                if (!frame.then_values.empty() && !frame.else_values.empty()) {
-                    int phi_id = newValue(Op::Phi);
-                    values[phi_id].local_index = -1;
-                    values[phi_id].operands = {
-                        frame.then_values[0],
-                        frame.else_values[0]
-                    };
-                    stack.push_back(phi_id);
-                    
-                    sprintf(buf, "v%d = End(%s), v%d = Phi(v%d, v%d)",
-                            end_id, kind, phi_id,
-                            frame.then_values[0], frame.else_values[0]);
-                } else {
-                    sprintf(buf, "v%d = End(%s)", end_id, kind);
-                }
-                
-                // 合併被修改的 locals
-                if (frame.has_else) {
-                    // if-else：兩個分支都可能改 local
-                    for (auto& [idx, then_val] : frame.then_locals) {
-                        auto else_it = frame.else_locals.find(idx);
-                        auto entry_it = frame.entry_locals.find(idx);
-                        int else_val = (else_it != frame.else_locals.end()) 
-                            ? else_it->second 
-                            : (entry_it != frame.entry_locals.end() ? entry_it->second : then_val);
-                        if (then_val != else_val) {
-                            int phi_id = newValue(Op::Phi);
-                            values[phi_id].local_index = -1;
-                            values[phi_id].operands = {then_val, else_val};
-                            localVars[idx] = phi_id;
-                        }
-                    }
-                } else {
-                    // no-else：then 改的 local 要跟 entry 值合併
-                    for (auto& [idx, then_val] : frame.then_locals) {
-                        auto entry_it = frame.entry_locals.find(idx);
-                        if (entry_it != frame.entry_locals.end() && entry_it->second != then_val) {
-                            int phi_id = newValue(Op::Phi);
-                            values[phi_id].local_index = -1;
-                            values[phi_id].operands = {then_val, entry_it->second};
-                            localVars[idx] = phi_id;
-                        }
-                    }
-                }
-
-                printState("End", buf);
-            }
-
-            fprintf(stderr, "[END] localVars after:\n");
-            for (auto& [idx, vid] : localVars) {
-                fprintf(stderr, "  local_%d = v%d\n", idx, vid);
-            }
-
-            break;
+    for (size_t j = loop_start + 1; j < code.size() && depth > 0; j++) {
+        if (code[j].op == WasmOp::Loop || code[j].op == WasmOp::Block || code[j].op == WasmOp::If) {
+            depth++;
+            if (depth == 2) entered_inner = true;
+        } else if (code[j].op == WasmOp::End) {
+            depth--;
         }
+        if (depth == 1 && code[j].op == WasmOp::LocalGet)
+            seen_get.insert(code[j].operand);
+        if (depth == 1 && code[j].op == WasmOp::LocalSet) {
+            res.modified_locals.insert(code[j].operand);
+            if (!entered_inner) res.set_before_inner.insert(code[j].operand);
+            if (seen_get.count(code[j].operand)) res.read_before_write.insert(code[j].operand);
+        }
+        if (depth > 1 && code[j].op == WasmOp::LocalSet) {
+            if (!res.set_before_inner.count(code[j].operand))
+                res.modified_locals.insert(code[j].operand);
+        }
+    }
+    return res;
+}
 
-        case WasmOp::LocalGet: {
-            // 查找局部变量当前值
-            auto it = localVars.find(ins.operand);
-            if (it != localVars.end()) {
-                // 已经被赋值过，使用当前值
-                stack.push_back(it->second);
-                // 传入 "-" 表示没有创建新的 SSA
-                printState(
-                    "LocalGet(" + std::to_string(ins.operand) + ")", 
-                    "-"  // ← 关键：没有创建新 SSA
-                );
-            } else {
-                // 第一次访问
-                if (ins.operand < (int)numParams) {
-                    // 是参数
-                    int id = newValue(Op::Param);
-                    values[id].paramIndex = ins.operand;
-                    localVars[ins.operand] = id;
-                    stack.push_back(id);
-            
-                    // 传入创建的 SSA
-                    char buf[100];
-                    sprintf(buf, "v%d = Param(%d)", id, ins.operand);
-                    printState(
-                        "LocalGet(" + std::to_string(ins.operand) + ")", 
-                        buf  // ← 显示创建的 SSA
-                    );
-                } else {
-                    // 是未初始化的局部变量，默认为 0
-                    int id = newValue(Op::I32Const);
-                    values[id].constValue = 0;
-                    localVars[ins.operand] = id;
-                    stack.push_back(id);
-            
-                    char buf[100];
-                    sprintf(buf, "v%d = Const(0)", id);
-                    printState(
-                        "LocalGet(" + std::to_string(ins.operand) + ")", 
-                        buf
-                    );
-                }
-            }
-            break;
-        }
+static void handle_Loop(LowerContext& ctx, const Instr&, size_t idx) {
+    int loop_id = ctx.newValue(Op::Loop);
+    fprintf(stderr, "[LOOP START] v%d = Loop\n", loop_id);
 
-        case WasmOp::LocalSet: {
-            if (!stack.empty()) {
-                int val = stack.back();
-                stack.pop_back();
-                
-                // ✅ 直接更新映射，不创建 LocalSet 节点
-                localVars[ins.operand] = val;
+    ControlFrame frame;
+    frame.type = ControlFrame::Loop;
+    frame.loop_start_id = loop_id;
+    frame.stack_size = ctx.stack.size();
 
-                // ✅ 創建 LocalSet 節點
-                int set_id = newValue(Op::LocalSet);
-                values[set_id].paramIndex = ins.operand;  // 存儲變量索引
-                values[set_id].lhs = val;  // 存儲要設置的值
-                
-                localVars[ins.operand] = val;  // 更新映射（用於優化）
-                
-                char buf[100];
-                // sprintf(buf, "v%d = LocalSet(local_%d, v%d)", 
-                //         set_id, ins.operand, val);
-                sprintf(buf, "Updated local_%d = v%d (no IR node)", ins.operand, val);
-                printState("LocalSet", buf);
-            }
-            break;
+    // 確保 params 在 localVars 裡
+    for (int i = 0; i < (int)ctx.numParams; i++) {
+        if (!ctx.localVars.count(i)) {
+            int id = ctx.newValue(Op::Param);
+            ctx.values[id].paramIndex = i;
+            ctx.localVars[i] = id;
         }
-        
-        case WasmOp::LocalTee: {
-            if (stack.empty()) break;
-            int val = stack.back(); 
-            // tee 不 pop，值留在栈上
-            localVars[ins.operand] = val;
-            // 栈上已经有值了，不需要再 push
-            break;
-        }
+    }
 
-        case WasmOp::I32Const: {
-            int id = newValue(Op::I32Const);
-            values[id].constValue = ins.operand;
-            stack.push_back(id);
-            printState("I32Const(" + std::to_string(ins.operand) + ")");
-            break;
+    auto scan = scanLoopBody(ctx.code, idx);
+
+    fprintf(stderr, "[LOOP v%d] set_before_inner = {", loop_id);
+    for (int i : scan.set_before_inner) fprintf(stderr, " %d", i);
+    fprintf(stderr, " }\n[LOOP v%d] modified_locals = {", loop_id);
+    for (int i : scan.modified_locals) fprintf(stderr, " %d", i);
+    fprintf(stderr, " }\n");
+
+    // 初始化未知 local
+    for (int i : scan.modified_locals) {
+        if (!ctx.localVars.count(i)) {
+            int id = ctx.newValue(Op::I32Const);
+            ctx.values[id].constValue = 0;
+            ctx.localVars[i] = id;
         }
-        case WasmOp::I64Const: {
-            int id = newValue(Op::I64Const);  // 暫時複用，之後改
-            values[id].constValue = ins.i64operand;
-            values[id].type = ValueType::I64;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32Add: {
-            if (stack.size() < 2) {
-                fprintf(stderr, "Error : Stack underflow at I32Add \n");
+    }
+
+    // 建 loop-carried PHI
+    for (int i : scan.modified_locals) {
+        if (scan.set_before_inner.count(i) && !scan.read_before_write.count(i)) continue;
+        if (!scan.set_before_inner.count(i) && !scan.read_before_write.count(i)) continue;
+
+        int entry_val = ctx.localVars[i];
+        int phi_id = ctx.newValue(Op::Phi);
+        ctx.values[phi_id].operands.push_back(entry_val);
+        ctx.values[phi_id].local_index = i;
+
+        // 檢查外層 loop 是否需要 VLOAD
+        for (auto& outer : ctx.control_stack) {
+            if (outer.type == ControlFrame::Loop &&
+                outer.loop_phis.count(i) == 0 &&
+                !outer.set_before_inner.count(i)) {
+                ctx.values[phi_id].use_vload_entry = true;
                 break;
             }
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Add);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            printState("I32Add");
-            break;
         }
-        case WasmOp::I32Sub: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Sub);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-
-            char buf[100];  // ✅ 加上這三行
-            sprintf(buf, "v%d = Sub(v%d, v%d)", id, lhs, rhs);
-            printState("I32Sub", buf);
-            break;
-        }
-        case WasmOp::I64Add: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Add);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            values[id].type = ValueType::I64;  // ← 標記型別
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I64Sub: {
-            int rhs = safePop(); int lhs = safePop();
-            int id = newValue(Op::Sub);
-            values[id].lhs = lhs; values[id].rhs = rhs;
-            values[id].type = ValueType::I64;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I64Mul: {
-            int rhs = safePop(); int lhs = safePop();
-            int id = newValue(Op::Mul);
-            values[id].lhs = lhs; values[id].rhs = rhs;
-            values[id].type = ValueType::I64;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32Mul: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Mul);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32DivS: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Div_S);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I64DivS: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Div_S);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            values[id].type = ValueType::I64;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32DivU: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Div_U);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32RemS: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Rem_S);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I64RemS: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Rem_S);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            values[id].type = ValueType::I64;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32RemU: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Rem_U);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-
-        // 比較運算（二元，像 Add/Sub 一樣處理）
-        case WasmOp::I32Eq: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Eq);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32Ne: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Ne);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32LtS: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Lt_S);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32GtS: {
-            if (stack.size() < 2) break;
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Gt_S);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-    
-            char buf[100];
-            sprintf(buf, "v%d = Gt_S(v%d, v%d)", id, lhs, rhs);
-            printState("I32GtS", buf);
-            break;
-        }
-
-        case WasmOp::I32LeS: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Le_S);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32GeS: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Ge_S);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32LtU: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Lt_U);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32GtU: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Gt_U);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32LeU: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Le_U);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32GeU: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Ge_U);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-
-        case WasmOp::I32And: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::And);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32Or: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Or);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32Xor: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Xor);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32Shl: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Shl);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32ShrS: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Shr_S);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32ShrU: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::Shr_U);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-
-        // Eqz（一元運算，特殊處理）
-        case WasmOp::I32Eqz: {
-            int val = safePop();
-            int id = newValue(Op::Eqz);
-            values[id].lhs = val;  // 只有一個操作數
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32WrapI64: {
-            int val = safePop();
-            int id = newValue(Op::I32WrapI64);
-            values[id].lhs = val;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I64ExtendI32S: {
-            int val = safePop();
-            int id = newValue(Op::I64ExtendI32S);
-            values[id].lhs = val;
-            values[id].type = ValueType::I64;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I64ExtendI32U: {
-            int val = safePop();
-            int id = newValue(Op::I64ExtendI32U);
-            values[id].lhs = val;
-            values[id].type = ValueType::I64;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::F64ConvertI32S: {
-            int val = safePop();
-            int id = newValue(Op::F64ConvertI32S);
-            values[id].lhs = val;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::F64ConvertI32U: {
-            int val = safePop();
-            int id = newValue(Op::F64ConvertI32U);
-            values[id].lhs = val;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::F64ConvertI64S: {
-            int val = safePop();
-            int id = newValue(Op::F64ConvertI64S);
-            values[id].lhs = val;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::F64ConvertI64U: {
-            int val = safePop();
-            int id = newValue(Op::F64ConvertI64U);
-            values[id].lhs = val;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32TruncF64S: {
-            int val = safePop();
-            int id = newValue(Op::I32TruncF64S);
-            values[id].lhs = val;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32TruncF64U: {
-            int val = safePop();
-            int id = newValue(Op::I32TruncF64U);
-            values[id].lhs = val;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I64TruncF64S: {
-            int val = safePop();
-            int id = newValue(Op::I64TruncF64S);
-            values[id].lhs = val;
-            values[id].type = ValueType::I64;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I64TruncF64U: {
-            int val = safePop();
-            int id = newValue(Op::I64TruncF64U);
-            values[id].lhs = val;
-            values[id].type = ValueType::I64;
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::I32Clz: {
-            int val = safePop();
-            int id = newValue(Op::Clz);
-            values[id].lhs = val;  // 只有一個操作數
-            stack.push_back(id);
-            break;
-        }
-
-        case WasmOp::Select: {
-            if (stack.size() < 3) break;
-            
-            // 弹出的顺序和压入相反
-            int cond = stack.back(); stack.pop_back();   // condition
-            int true_val = stack.back(); stack.pop_back();  // true value
-            int false_val = stack.back(); stack.pop_back(); // false value
-            
-            int id = newValue(Op::Select);
-            values[id].operands = {cond, true_val, false_val};
-            // 或者用现有的字段：
-            // values[id].lhs = cond;
-            // values[id].rhs = true_val;
-            // 还需要第三个值，可能需要扩展 Value 结构
-            
-            stack.push_back(id);
-            break;
-        }
-
-        case WasmOp::Loop: {
-            // 创建 Loop 节点
-            int loop_id = newValue(Op::Loop);
-            
-            fprintf(stderr, "[LOOP START] v%d = Loop\n", loop_id);  // ✅ 添加
-
-            ControlFrame frame;
-            frame.type = ControlFrame::Loop;
-            frame.loop_start_id = loop_id;
-            frame.stack_size = stack.size();
-
-            // 確保所有參數都在 localVars 裡
-            for (int i = 0; i < (int)numParams; i++) {
-                if (localVars.find(i) == localVars.end()) {
-                    int id = newValue(Op::Param);
-                    values[id].paramIndex = i;
-                    localVars[i] = id;
-                }
-            }
-                    
-            // 掃描這個 loop body 會修改哪些 local
-            std::unordered_set<int> modified_locals;  // 所有被修改的 local
-            std::unordered_set<int> read_before_write;    // 先 Get 才 Set 的 local
-            std::unordered_set<int> seen_get;
-
-            bool entered_inner = false;
-            std::unordered_set<int> set_before_inner;
-
-            int depth = 1;
-            for (size_t j = i + 1; j < code.size() && depth > 0; j++) {
-                if (code[j].op == WasmOp::Loop || code[j].op == WasmOp::Block || code[j].op == WasmOp::If) {
-                    depth++;
-                    if (depth == 2) entered_inner = true;
-                } else if (code[j].op == WasmOp::End) depth--;
-                
-                if (depth == 1 && code[j].op == WasmOp::LocalGet)
-                    seen_get.insert(code[j].operand);
-                if (depth == 1 && code[j].op == WasmOp::LocalSet) {
-                    modified_locals.insert(code[j].operand);
-                    if (!entered_inner)
-                        set_before_inner.insert(code[j].operand);
-                    if (depth == 1 && seen_get.count(code[j].operand))
-                        read_before_write.insert(code[j].operand);
-                }
-                if (depth > 1 && code[j].op == WasmOp::LocalSet) {
-                    if (!set_before_inner.count(code[j].operand)) {
-                        modified_locals.insert(code[j].operand);
-                    }
-                }
-            }
-
-            fprintf(stderr, "[LOOP v%d] set_before_inner = {", loop_id);
-            for (int idx : set_before_inner) fprintf(stderr, " %d", idx);
-            fprintf(stderr, " }\n");
-            fprintf(stderr, "[LOOP v%d] modified_locals = {", loop_id);
-            for (int idx : modified_locals) fprintf(stderr, " %d", idx);
-            fprintf(stderr, " }\n");
-
-            // ✅ 修改：為所有被修改的 local 創建 PHI（不僅僅是 read_before_write）
-            // 先確保所有會被 loop 修改的 local 都已經存在
-            for (int idx : modified_locals) {
-                if (localVars.find(idx) == localVars.end()) {
-                    int zero_id = newValue(Op::I32Const);
-                    values[zero_id].constValue = 0;
-                    localVars[idx] = zero_id;
-                    fprintf(stderr, "  [LOCAL INIT] local_%d = v%d Const(0)\n", idx, zero_id);
-                }
-            }
-
-            // 再為所有會被修改的 local 建 loop-carried PHI
-            for (int idx : modified_locals) {
-                if (set_before_inner.count(idx) && !read_before_write.count(idx))
-                    continue;  // 在 inner 前就被 Set，且不是先 Get 才 Set，跳過
-                if (!set_before_inner.count(idx) && !read_before_write.count(idx))
-                    continue;  // inner-only modified，用 VLOAD 處理，不建 outer PHI            
-                int entry_val = localVars[idx];
-                int phi_id = newValue(Op::Phi);
-                values[phi_id].operands.push_back(entry_val);
-                values[phi_id].local_index = idx;
-                // 檢查外層 loop 是否沒有為這個 idx 建 PHI（代表需要從 VAR VLOAD）
-                for (auto& outer_frame : control_stack) {
-                    if (outer_frame.type == ControlFrame::Loop && 
-                        outer_frame.loop_phis.count(idx) == 0 && 
-                        !outer_frame.set_before_inner.count(idx)) {
-                        values[phi_id].use_vload_entry = true;
-                        break;
-                    }
-                }
-                fprintf(stderr, "  [PHI CREATE] v%d = Phi(v%d) for local_%d%s\n", 
-                        phi_id, entry_val, idx,
-                        values[phi_id].use_vload_entry ? " [use_vload]" : "");
-                fprintf(stderr, "  [PHI CREATE] v%d = Phi(v%d) for local_%d\n", phi_id, entry_val, idx);
-                frame.loop_phis[idx] = phi_id;
-                localVars[idx] = phi_id;
-            }
-
-            // 在 Loop 掃描後添加
-            fprintf(stderr, "  [DEBUG] modified_locals = {");
-            for (int idx : modified_locals) {
-                fprintf(stderr, " %d", idx);
-            }
-            fprintf(stderr, " }\n");
-            
-            frame.set_before_inner = set_before_inner;
-            control_stack.push_back(frame);
-            break;
-        }
-
-        case WasmOp::Block: {
-            ControlFrame frame;
-            frame.type = ControlFrame::Block;
-            frame.stack_size = stack.size();
-            frame.entry_locals = localVars;
-            frame.has_else = false;
-            control_stack.push_back(frame);
-            break;
-        }
-
-        case WasmOp::Br_if: {
-            if (stack.empty()) break;
-            int cond = stack.back();
-            stack.pop_back();
-            
-            int depth = ins.operand;
-            if (depth >= (int)control_stack.size()) break;
-                    
-            fprintf(stderr, "[BR_IF] depth=%d, control_stack size=%zu, target type=%d\n",
-                ins.operand, control_stack.size(),
-                (int)control_stack[control_stack.size() - 1 - ins.operand].type);
-
-            ControlFrame& target = control_stack[control_stack.size() - 1 - depth];
-            
-            if (target.type == ControlFrame::Loop) {
-                // br_if 0：continue loop
-                for (auto& [idx, phi_id] : target.loop_phis) {
-                    if (localVars.count(idx)) {
-                        int cur = localVars[idx];
-                        // ✅ 重要：即使 cur == phi_id，也要添加（第一次回邊）
-                        // 但需要避免重複添加相同的值
-                        bool already_has = false;
-                        for (int existing : values[phi_id].operands) {
-                            if (existing == cur) {
-                                already_has = true;
-                                break;
-                            }
-                        }
-                        if (!already_has) {
-                            values[phi_id].operands.push_back(cur);
-                            fprintf(stderr, "[BR_IF] Adding back-edge value v%d for local_%d to phi v%d\n",
-                                    cur, idx, phi_id);
-                        }
-                    }
-                }
-                // ✅ 新增：對於在 loop 中被修改但還沒有 phi 的變量，創建 phi
-                // 這需要您提前掃描 loop body 來確定所有被修改的 local
-                // 或者可以在這裡動態創建
-
-                int br_if_id = newValue(Op::Br_if);
-                values[br_if_id].lhs = cond;
-                values[br_if_id].rhs = target.loop_start_id;
-                values[br_if_id].constValue = 0; // loop_back
-            } else if (target.type == ControlFrame::Block) {
-                // 找包含這個 Block 的外層 loop
-                int block_idx = (int)control_stack.size() - 1 - depth;
-                int outer_loop_start_id = -1;
-                for (int k = block_idx + 1; k < (int)control_stack.size(); k++) {
-                    if (control_stack[k].type == ControlFrame::Loop) {
-                        outer_loop_start_id = control_stack[k].loop_start_id;
-                        break;
-                    }
-                }
-                int br_if_id = newValue(Op::Br_if);
-                values[br_if_id].lhs = cond;
-                values[br_if_id].rhs = outer_loop_start_id;  // ← 外層 loop 的 start id
-                values[br_if_id].constValue = 1; // block_exit
-            }
-            break;
-        }
-
-        case WasmOp::Br: {
-            int depth = ins.operand;
-            if (depth >= (int)control_stack.size()) break;
-            
-            ControlFrame& target = control_stack[control_stack.size() - 1 - depth];
-            
-            fprintf(stderr, "[BR_DEBUG] depth=%d, target.type=%d, loop_phis size=%zu\n",
-                    depth, target.type, target.loop_phis.size());
-            for (auto& [idx, phi_id] : target.loop_phis) {
-                fprintf(stderr, "  loop_phis[%d] = v%d\n", idx, phi_id);
-            }
-
-            if (target.type == ControlFrame::Loop) {
-                // 更新 loop phi 回邊（跟 Br_if 一樣）
-                for (auto& [idx, phi_id] : target.loop_phis) {
-                    if (localVars.count(idx)) {
-                        int cur = localVars[idx];
-                        bool already_has = false;
-                        for (int existing : values[phi_id].operands) {
-                            if (existing == cur) {
-                                already_has = true;
-                                break;
-                            }
-                        }
-                        if (!already_has) {
-                            values[phi_id].operands.push_back(cur);
-                            fprintf(stderr, "[BR] Adding back-edge value v%d for local_%d to phi v%d\n",
-                                    cur, idx, phi_id);
-                        }
-                    }
-                }
-                int br_id = newValue(Op::Br);
-                values[br_id].lhs = target.loop_start_id;
-                int first_phi_id = -1;
-                if (!target.loop_phis.empty())
-                    first_phi_id = target.loop_phis.begin()->second;
-                values[br_id].rhs = first_phi_id;
-                fprintf(stderr, "[BR_LOWER] depth=%d, loop_start_id=%d, lhs=%d, rhs=%d\n",
-                    depth, target.loop_start_id, values[br_id].lhs, values[br_id].rhs);
-            } else {
-                // Block/If: 把 stack top 當作 block 的回傳值存起來
-                if (!stack.empty())
-                    target.then_values.push_back(stack.back());
-                int br_id = newValue(Op::Br);
-                values[br_id].lhs = -1;
-                values[br_id].rhs = -1;
-            }
-            // Br 之後是 dead code，清空 stack 到 target 的 stack_size
-            stack.resize(target.stack_size);
-            break;
-        }
-
-        case WasmOp::BrTable: {  // br_table
-            if (stack.empty()) break;
-            int idx = safePop();  // table index
-            // 暫時當作 Br depth=0 處理（跳預設目標）
-            int br_id = newValue(Op::Br);
-            values[br_id].lhs = -1;
-            stack.clear();  // dead code
-            break;
-        }
-
-        case WasmOp::Call: {
-            int num_args = (int)ins.foperand;
-            int callee_idx = ins.operand;
-            int id = newValue(Op::Call);
-            values[id].lhs = callee_idx;
-            if (callee_idx >= 0 && callee_idx < (int)funcNames.size())
-                values[id].callee_name = funcNames[callee_idx];
-            std::vector<int> args(num_args);
-            for (int i = num_args - 1; i >= 0; i--) {
-                args[i] = safePop();
-            }
-            values[id].operands = args;
-            stack.push_back(id);  // 先假設有回傳值（void call 用 Drop 處理）
-            break;
-        }
-
-        case WasmOp::Unreachable: {
-            int id = newValue(Op::Unreachable);
-            break;
-        }
-
-        case WasmOp::MemorySize: {
-            int id = newValue(Op::MemorySize);
-            stack.push_back(id);
-            break;
-        }
-        case WasmOp::MemoryCopy: {
-            int id = newValue(Op::MemoryCopy);
-            values[id].operands.resize(3);
-            values[id].operands[2] = safePop();  // size
-            values[id].operands[1] = safePop();  // source
-            values[id].operands[0] = safePop();  // dest
-            break;  // void，不 push
-        }
-        case WasmOp::MemoryFill: {
-            int id = newValue(Op::MemoryFill);
-            values[id].operands.resize(3);
-            values[id].operands[2] = safePop();  // size
-            values[id].operands[1] = safePop();  // value
-            values[id].operands[0] = safePop();  // dest
-            break;  // void，不 push
-        }
-
-        case WasmOp::Return: {
-            if (!stack.empty()) {
-                int v = stack.back(); stack.pop_back();
-                int id = newValue(Op::Return);
-                values[id].lhs = v;
-            }
-            break;
-        }
-
-        case WasmOp::I32Load: {
-            int ptr = safePop();
-            int id = newValue(Op::Load);
-            values[id].lhs = ptr;
-            stack.push_back(id);
-            break;
-        }
-
-        case WasmOp::F64Load: {
-            int ptr = safePop();
-            int id = newValue(Op::F64Load);
-            values[id].lhs = ptr;
-            stack.push_back(id);
-            break;
-        }
-
-        case WasmOp::I32Store: {
-            int val = safePop();
-            int ptr = safePop();
-            int id = newValue(Op::Store);
-            values[id].lhs = ptr;
-            values[id].rhs = val;
-            break;
-        }
-
-        case WasmOp::I64Load: {
-            int ptr = safePop();
-            int id = newValue(Op::Load);
-            values[id].lhs = ptr;
-            values[id].type = ValueType::I64;
-            stack.push_back(id);
-            break;
-        }
-
-        case WasmOp::I64Store: {
-            int val = safePop();
-            int ptr = safePop();
-            int id = newValue(Op::Store);
-            values[id].lhs = ptr;
-            values[id].rhs = val;
-            values[id].type = ValueType::I64;
-            break;
-        }
-
-        case WasmOp::F64Store: {
-            int val = safePop();
-            int ptr = safePop();
-            int id = newValue(Op::F64Store);
-            values[id].lhs = ptr;
-            values[id].rhs = val;
-            break;
-        }
-
-        case WasmOp::F64Const: {
-            int id = newValue(Op::F64Const);
-            values[id].constValue = ins.foperand;
-            stack.push_back(id);
-            printState("F64Const(" + std::to_string(ins.foperand) + ")");
-            break;
-        }
-
-        case WasmOp::F64Add: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::F64Add);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-
-        case WasmOp::F64Sub: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::F64Sub);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-
-        case WasmOp::F64Mul: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::F64Mul);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-
-        case WasmOp::F64Div: {
-            int rhs = safePop();
-            int lhs = safePop();
-            int id = newValue(Op::F64Div);
-            values[id].lhs = lhs;
-            values[id].rhs = rhs;
-            stack.push_back(id);
-            break;
-        }
-
-        case WasmOp::Drop: {
-            if (!stack.empty()) stack.pop_back();
-            break;
-        }
-
-        case WasmOp::Unsupported: {
-            // Push dummy value so stack doesn't underflow
-            int id = newValue(Op::I32Const);
-            values[id].constValue = 0;
-            stack.push_back(id);
-            break;
-        }        
-        }
+        fprintf(stderr, "  [PHI CREATE] v%d = Phi(v%d) for local_%d%s\n",
+                phi_id, entry_val, i,
+                ctx.values[phi_id].use_vload_entry ? " [use_vload]" : "");
+        frame.loop_phis[i] = phi_id;
+        ctx.localVars[i] = phi_id;
     }
 
-    // --- implicit return (WASM function end) ---
-    if (!stack.empty()) {
-        int v = stack.back();
-        // 如果你允許多個 return，這裡可再加一個旗標避免重複產生
-        int id = newValue(Op::Return);
-        values[id].lhs = v;
-    }
+    frame.set_before_inner = scan.set_before_inner;
+    ctx.control_stack.push_back(std::move(frame));
+}
 
-    // ===== 新增：清理退化的 Phi 節點 + DCE =====
+static void handle_Block(LowerContext& ctx, const Instr&, size_t) {
+    ControlFrame frame;
+    frame.type = ControlFrame::Block;
+    frame.stack_size = ctx.stack.size();
+    frame.entry_locals = ctx.localVars;
+    ctx.control_stack.push_back(std::move(frame));
+}
+
+// ============================================================
+// 控制流：Br_if / Br / BrTable
+// ============================================================
+
+static void handle_Br_if(LowerContext& ctx, const Instr& ins, size_t) {
+    if (ctx.stack.empty()) return;
+    int cond = ctx.stack.back(); ctx.stack.pop_back();
+    int depth = ins.operand;
+    if (depth >= (int)ctx.control_stack.size()) return;
+
+    fprintf(stderr, "[BR_IF] depth=%d, control_stack size=%zu, target type=%d\n",
+            ins.operand, ctx.control_stack.size(),
+            (int)ctx.control_stack[ctx.control_stack.size() - 1 - ins.operand].type);
+
+    ControlFrame& target = ctx.control_stack[ctx.control_stack.size() - 1 - depth];
+
+    if (target.type == ControlFrame::Loop) {
+        ctx.updateLoopPhiBackedges(target);
+        int id = ctx.newValue(Op::Br_if);
+        ctx.values[id].lhs = cond;
+        ctx.values[id].rhs = target.loop_start_id;
+        ctx.values[id].constValue = 0;
+    } else if (target.type == ControlFrame::Block) {
+        int block_idx = (int)ctx.control_stack.size() - 1 - depth;
+        int outer_loop_start_id = -1;
+        for (int k = block_idx + 1; k < (int)ctx.control_stack.size(); k++) {
+            if (ctx.control_stack[k].type == ControlFrame::Loop) {
+                outer_loop_start_id = ctx.control_stack[k].loop_start_id;
+                break;
+            }
+        }
+        int id = ctx.newValue(Op::Br_if);
+        ctx.values[id].lhs = cond;
+        ctx.values[id].rhs = outer_loop_start_id;
+        ctx.values[id].constValue = 1;
+    }
+}
+
+static void handle_Br(LowerContext& ctx, const Instr& ins, size_t) {
+    int depth = ins.operand;
+    if (depth >= (int)ctx.control_stack.size()) return;
+    ControlFrame& target = ctx.control_stack[ctx.control_stack.size() - 1 - depth];
+
+    fprintf(stderr, "[BR_DEBUG] depth=%d, target.type=%d, loop_phis size=%zu\n",
+            depth, target.type, target.loop_phis.size());
+
+    if (target.type == ControlFrame::Loop) {
+        ctx.updateLoopPhiBackedges(target);
+        int br_id = ctx.newValue(Op::Br);
+        ctx.values[br_id].lhs = target.loop_start_id;
+        ctx.values[br_id].rhs = target.loop_phis.empty() ? -1 : target.loop_phis.begin()->second;
+    } else {
+        if (!ctx.stack.empty()) target.then_values.push_back(ctx.stack.back());
+        int br_id = ctx.newValue(Op::Br);
+        ctx.values[br_id].lhs = -1;
+        ctx.values[br_id].rhs = -1;
+    }
+    ctx.stack.resize(target.stack_size);
+}
+
+static void handle_BrTable(LowerContext& ctx, const Instr&, size_t) {
+    if (ctx.stack.empty()) return;
+    ctx.safePop();
+    int br_id = ctx.newValue(Op::Br);
+    ctx.values[br_id].lhs = -1;
+    ctx.stack.clear();
+}
+
+// ============================================================
+// 其他
+// ============================================================
+
+static void handle_Select(LowerContext& ctx, const Instr&, size_t) {
+    if (ctx.stack.size() < 3) return;
+    int cond      = ctx.stack.back(); ctx.stack.pop_back();
+    int true_val  = ctx.stack.back(); ctx.stack.pop_back();
+    int false_val = ctx.stack.back(); ctx.stack.pop_back();
+    int id = ctx.newValue(Op::Select);
+    ctx.values[id].operands = {cond, true_val, false_val};
+    ctx.stack.push_back(id);
+}
+
+static void handle_Return(LowerContext& ctx, const Instr&, size_t) {
+    if (ctx.stack.empty()) return;
+    int v = ctx.stack.back(); ctx.stack.pop_back();
+    int id = ctx.newValue(Op::Return);
+    ctx.values[id].lhs = v;
+}
+
+static void handle_Drop(LowerContext& ctx, const Instr&, size_t) {
+    if (!ctx.stack.empty()) ctx.stack.pop_back();
+}
+
+static void handle_Call(LowerContext& ctx, const Instr& ins, size_t) {
+    int num_args = (int)ins.foperand;
+    int callee_idx = ins.operand;
+    int id = ctx.newValue(Op::Call);
+    ctx.values[id].lhs = callee_idx;
+    if (callee_idx >= 0 && callee_idx < (int)ctx.funcNames.size())
+        ctx.values[id].callee_name = ctx.funcNames[callee_idx];
+    std::vector<int> args(num_args);
+    for (int i = num_args - 1; i >= 0; i--) args[i] = ctx.safePop();
+    ctx.values[id].operands = args;
+    ctx.stack.push_back(id);
+}
+
+static void handle_Unreachable(LowerContext& ctx, const Instr&, size_t) {
+    ctx.newValue(Op::Unreachable);
+}
+
+static void handle_MemorySize(LowerContext& ctx, const Instr&, size_t) {
+    int id = ctx.newValue(Op::MemorySize);
+    ctx.stack.push_back(id);
+}
+
+static void handle_MemoryCopy(LowerContext& ctx, const Instr&, size_t) {
+    int id = ctx.newValue(Op::MemoryCopy);
+    ctx.values[id].operands.resize(3);
+    ctx.values[id].operands[2] = ctx.safePop();
+    ctx.values[id].operands[1] = ctx.safePop();
+    ctx.values[id].operands[0] = ctx.safePop();
+}
+
+static void handle_MemoryFill(LowerContext& ctx, const Instr&, size_t) {
+    int id = ctx.newValue(Op::MemoryFill);
+    ctx.values[id].operands.resize(3);
+    ctx.values[id].operands[2] = ctx.safePop();
+    ctx.values[id].operands[1] = ctx.safePop();
+    ctx.values[id].operands[0] = ctx.safePop();
+}
+
+static void handle_Load(LowerContext& ctx, const Instr& ins, size_t) {
+    Op op = (ins.op == WasmOp::I64Load) ? Op::Load : Op::Load;
+    ValueType t = (ins.op == WasmOp::I64Load) ? ValueType::I64 : ValueType::I32;
+    int ptr = ctx.safePop();
+    int id = ctx.newValue(op);
+    ctx.values[id].lhs = ptr;
+    ctx.values[id].type = t;
+    ctx.stack.push_back(id);
+}
+
+static void handle_F64Load(LowerContext& ctx, const Instr&, size_t) {
+    int ptr = ctx.safePop();
+    int id = ctx.newValue(Op::F64Load);
+    ctx.values[id].lhs = ptr;
+    ctx.stack.push_back(id);
+}
+
+static void handle_Store(LowerContext& ctx, const Instr& ins, size_t) {
+    ValueType t = (ins.op == WasmOp::I64Store) ? ValueType::I64 : ValueType::I32;
+    int val = ctx.safePop(), ptr = ctx.safePop();
+    int id = ctx.newValue(Op::Store);
+    ctx.values[id].lhs = ptr;
+    ctx.values[id].rhs = val;
+    ctx.values[id].type = t;
+}
+
+static void handle_F64Store(LowerContext& ctx, const Instr&, size_t) {
+    int val = ctx.safePop(), ptr = ctx.safePop();
+    int id = ctx.newValue(Op::F64Store);
+    ctx.values[id].lhs = ptr;
+    ctx.values[id].rhs = val;
+}
+
+static void handle_Unsupported(LowerContext& ctx, const Instr&, size_t) {
+    int id = ctx.newValue(Op::I32Const);
+    ctx.values[id].constValue = 0;
+    ctx.stack.push_back(id);
+}
+
+// ============================================================
+// Dispatch Table
+// ============================================================
+
+static const std::unordered_map<WasmOp, HandlerFn> kDispatch = {
+    { WasmOp::I32Add,        handle_I32Add },
+    { WasmOp::I32Sub,        handle_I32Sub },
+    { WasmOp::I32Mul,        handle_I32Mul },
+    { WasmOp::I32DivS,       handle_I32DivS },
+    { WasmOp::I32DivU,       handle_I32DivU },
+    { WasmOp::I32RemS,       handle_I32RemS },
+    { WasmOp::I32RemU,       handle_I32RemU },
+    { WasmOp::I32Eq,         handle_I32Eq },
+    { WasmOp::I32Ne,         handle_I32Ne },
+    { WasmOp::I32LtS,        handle_I32LtS },
+    { WasmOp::I32GtS,        handle_I32GtS },
+    { WasmOp::I32LeS,        handle_I32LeS },
+    { WasmOp::I32GeS,        handle_I32GeS },
+    { WasmOp::I32LtU,        handle_I32LtU },
+    { WasmOp::I32GtU,        handle_I32GtU },
+    { WasmOp::I32LeU,        handle_I32LeU },
+    { WasmOp::I32GeU,        handle_I32GeU },
+    { WasmOp::I32And,        handle_I32And },
+    { WasmOp::I32Or,         handle_I32Or },
+    { WasmOp::I32Xor,        handle_I32Xor },
+    { WasmOp::I32Shl,        handle_I32Shl },
+    { WasmOp::I32ShrS,       handle_I32ShrS },
+    { WasmOp::I32ShrU,       handle_I32ShrU },
+    { WasmOp::I32Eqz,        handle_I32Eqz },
+    { WasmOp::I32Clz,        handle_I32Clz },
+    { WasmOp::I32WrapI64,    handle_I32WrapI64 },
+    { WasmOp::I64Add,        handle_I64Add },
+    { WasmOp::I64Sub,        handle_I64Sub },
+    { WasmOp::I64Mul,        handle_I64Mul },
+    { WasmOp::I64DivS,       handle_I64DivS },
+    { WasmOp::I64RemS,       handle_I64RemS },
+    { WasmOp::I64ExtendI32S, handle_I64ExtendI32S },
+    { WasmOp::I64ExtendI32U, handle_I64ExtendI32U },
+    { WasmOp::F64Add,        handle_F64Add },
+    { WasmOp::F64Sub,        handle_F64Sub },
+    { WasmOp::F64Mul,        handle_F64Mul },
+    { WasmOp::F64Div,        handle_F64Div },
+    { WasmOp::F64ConvertI32S,handle_F64ConvertI32S },
+    { WasmOp::F64ConvertI32U,handle_F64ConvertI32U },
+    { WasmOp::F64ConvertI64S,handle_F64ConvertI64S },
+    { WasmOp::F64ConvertI64U,handle_F64ConvertI64U },
+    { WasmOp::I32TruncF64S,  handle_I32TruncF64S },
+    { WasmOp::I32TruncF64U,  handle_I32TruncF64U },
+    { WasmOp::I64TruncF64S,  handle_I64TruncF64S },
+    { WasmOp::I64TruncF64U,  handle_I64TruncF64U },
+    { WasmOp::I32Const,      handle_I32Const },
+    { WasmOp::I64Const,      handle_I64Const },
+    { WasmOp::F64Const,      handle_F64Const },
+    { WasmOp::LocalGet,      handle_LocalGet },
+    { WasmOp::LocalSet,      handle_LocalSet },
+    { WasmOp::LocalTee,      handle_LocalTee },
+    { WasmOp::If,            handle_If },
+    { WasmOp::Else,          handle_Else },
+    { WasmOp::End,           handle_End },
+    { WasmOp::Loop,          handle_Loop },
+    { WasmOp::Block,         handle_Block },
+    { WasmOp::Br_if,         handle_Br_if },
+    { WasmOp::Br,            handle_Br },
+    { WasmOp::BrTable,       handle_BrTable },
+    { WasmOp::Select,        handle_Select },
+    { WasmOp::Return,        handle_Return },
+    { WasmOp::Drop,          handle_Drop },
+    { WasmOp::Call,          handle_Call },
+    { WasmOp::Unreachable,   handle_Unreachable },
+    { WasmOp::MemorySize,    handle_MemorySize },
+    { WasmOp::MemoryCopy,    handle_MemoryCopy },
+    { WasmOp::MemoryFill,    handle_MemoryFill },
+    { WasmOp::I32Load,       handle_Load },
+    { WasmOp::I64Load,       handle_Load },
+    { WasmOp::F64Load,       handle_F64Load },
+    { WasmOp::I32Store,      handle_Store },
+    { WasmOp::I64Store,      handle_Store },
+    { WasmOp::F64Store,      handle_F64Store },
+    { WasmOp::Unsupported,   handle_Unsupported },
+};
+
+// ============================================================
+// Cleanup Phase: DCE + degenerate PHI removal
+// ============================================================
+
+static ValueIR cleanupValueIR(ValueIR& values) {
     fprintf(stderr, "\n=== Cleanup Phase ===\n");
-    
-    // Step 1: 找出退化的 Phi 並建立替換表
+
+    // Step 1: 找退化 PHI
     std::unordered_map<int, int> replacements;
     for (size_t i = 0; i < values.size(); i++) {
         if (values[i].op == Op::Phi && values[i].operands.size() == 1) {
             replacements[i] = values[i].operands[0];
-            fprintf(stderr, "[DEGENERATE] v%d = Phi(v%d) -> will replace with v%d\n",
-                    (int)i, values[i].operands[0], values[i].operands[0]);
+            fprintf(stderr, "[DEGENERATE] v%d = Phi(v%d)\n", (int)i, values[i].operands[0]);
         }
     }
-    
-    // Step 2: 遞歸解析替換鏈
+
+    // Step 2: 解析替換鏈
     std::function<int(int)> resolve = [&](int id) -> int {
         auto it = replacements.find(id);
         return (it != replacements.end()) ? resolve(it->second) : id;
     };
-    
-    // Step 3: 應用替換到所有節點
+
+    // Step 3: 應用替換
     for (auto& v : values) {
         if (v.lhs != -1) v.lhs = resolve(v.lhs);
         if (v.rhs != -1) v.rhs = resolve(v.rhs);
-        for (auto& op : v.operands) {
-            op = resolve(op);
-        }
+        for (auto& op : v.operands) op = resolve(op);
     }
-    
-    // Step 4: 標記所有被使用的節點
+
+    // Step 4: 標記 live 節點
     std::vector<bool> used(values.size(), false);
-
-    // ✅ 修正：控制流節點和 Return 節點都要保留
     for (size_t i = 0; i < values.size(); i++) {
-        if (values[i].op == Op::Return ||
-            values[i].op == Op::Store ||
-            values[i].op == Op::F64Store ||
-            values[i].op == Op::Loop ||
-            values[i].op == Op::If ||
-            values[i].op == Op::Else ||
-            values[i].op == Op::End ||
-            values[i].op == Op::Br_if ||
-            values[i].op == Op::Br ||
-            values[i].op == Op::LocalSet ||
-            values[i].op == Op::LocalGet) {
-            used[i] = true;
+        switch (values[i].op) {
+            case Op::Return: case Op::Store: case Op::F64Store:
+            case Op::Loop: case Op::If: case Op::Else: case Op::End:
+            case Op::Br_if: case Op::Br: case Op::LocalSet: case Op::LocalGet:
+                used[i] = true; break;
+            default: break;
         }
     }
-
-    // 遞歸標記所有依賴
     bool changed = true;
     while (changed) {
         changed = false;
         for (size_t i = 0; i < values.size(); i++) {
             if (!used[i]) continue;
-            
-            // 標記這個節點的所有操作數
-            if (values[i].lhs != -1 && !used[values[i].lhs]) {
-                used[values[i].lhs] = true;
-                changed = true;
-            }
-            if (values[i].rhs != -1 && !used[values[i].rhs]) {
-                used[values[i].rhs] = true;
-                changed = true;
-            }
-            for (int op : values[i].operands) {
-                if (!used[op]) {
-                    used[op] = true;
-                    changed = true;
+            auto mark = [&](int ref) {
+                if (ref >= 0 && ref < (int)values.size() && !used[ref]) {
+                    used[ref] = true; changed = true;
                 }
-            }
+            };
+            mark(values[i].lhs);
+            mark(values[i].rhs);
+            for (int op : values[i].operands) mark(op);
         }
     }
 
-    // Step 5: 建立新的 ID 映射 (old_id -> new_id)
+    // Step 5: remap IDs
     std::vector<int> id_map(values.size(), -1);
     int new_id = 0;
     for (size_t i = 0; i < values.size(); i++) {
-        if (used[i]) {
-            id_map[i] = new_id++;
-        } else {
-            fprintf(stderr, "[DEAD] v%d removed (not used)\n", (int)i);
-        }
+        if (used[i]) id_map[i] = new_id++;
+        else fprintf(stderr, "[DEAD] v%d removed\n", (int)i);
     }
 
-    // Step 6: 重建 values 陣列
-    ValueIR new_values;
-    new_values.reserve(new_id);
-
+    // Step 6: 重建
+    ValueIR result;
+    result.reserve(new_id);
     for (size_t i = 0; i < values.size(); i++) {
         if (!used[i]) continue;
-        
         Value v = values[i];
         v.id = id_map[i];
-        
-        // 更新所有引用的 ID
         if (v.lhs != -1) v.lhs = id_map[v.lhs];
         if (v.rhs != -1) v.rhs = id_map[v.rhs];
-        for (auto& op : v.operands) {
-            op = id_map[op];
+        for (auto& op : v.operands) op = id_map[op];
+        result.push_back(v);
+    }
+    fprintf(stderr, "[CLEANUP] %zu → %zu nodes\n\n", values.size(), result.size());
+    return result;
+}
+
+// ============================================================
+// 主入口
+// ============================================================
+
+ValueIR lowerWasmToSsa(const InstrSeq& code,
+                        const std::vector<std::string>& funcNames) {
+    LowerContext ctx(code, funcNames);
+
+    size_t start_idx = 0;
+    if (!code.empty() && code[0].op == WasmOp::FuncInfo) {
+        ctx.numParams = static_cast<size_t>(code[0].operand);
+        start_idx = 1;
+    }
+    fprintf(stderr, "=== SSA Lowering ===\nnumParams = %zu\n\n", ctx.numParams);
+
+    for (size_t i = start_idx; i < code.size(); i++) {
+        const Instr& ins = code[i];
+        auto it = kDispatch.find(ins.op);
+        if (it != kDispatch.end()) {
+            it->second(ctx, ins, i);
+        } else if (ins.op != WasmOp::FuncInfo) {
+            fprintf(stderr, "Unhandled WasmOp: %d\n", (int)ins.op);
         }
-        
-        new_values.push_back(v);
     }
 
-    fprintf(stderr, "[CLEANUP] Original: %zu nodes, After cleanup: %zu nodes\n\n",
-            values.size(), new_values.size());
+    // implicit return
+    if (!ctx.stack.empty()) {
+        int v = ctx.stack.back();
+        int id = ctx.newValue(Op::Return);
+        ctx.values[id].lhs = v;
+    }
 
-    return new_values;  // ← 返回清理後的陣列
+    return cleanupValueIR(ctx.values);
 }
