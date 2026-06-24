@@ -36,6 +36,7 @@ struct LoopInfo {
     int loop_value_id;
     ir_ref loop_exit = IR_UNUSED;
     std::vector<ir_ref> exits;
+    std::unordered_map<int, ir_ref> outer_carry_phis;  // local_idx -> outer PHI ref
 };
 std::vector<LoopInfo> loop_stack;
 
@@ -493,12 +494,31 @@ void IRBridge::handleBr(BuildContext& bc, const Value& val) {
     if (!target_loop && !loop_stack.empty()) target_loop = &loop_stack.back();
     if (!target_loop) return;
 
+    // 設 inner PHI back-edge
     for (int phi_id : target_loop->phi_ids) {
         const Value& phi_val = bc.values[phi_id];
         if ((int)phi_val.operands.size() >= 2) {
             ir_ref phi_ref = bc.value_map[phi_id];
             ir_ref backedge_ref = bc.value_map[phi_val.operands[1]];
+            fprintf(stderr, "[BR] Adding back-edge value v%d for local_%d to phi v%d\n",
+                    phi_val.operands[1], phi_val.local_index, phi_id);
             ir_PHI_SET_OP(phi_ref, 2, backedge_ref);
+        }
+    }
+
+    // 設 outer carry PHI 的 back-edge
+    if (loop_stack.size() >= 2) {
+        LoopInfo& outer_loop = loop_stack[loop_stack.size() - 2];
+        for (auto& [local_idx, outer_phi_ref] : outer_loop.outer_carry_phis) {
+            // 找 inner loop 裡這個 local 的最新值
+            for (int phi_id : target_loop->phi_ids) {
+                const Value& phi_val = bc.values[phi_id];
+                if (phi_val.local_index == local_idx && (int)phi_val.operands.size() >= 2) {
+                    ir_ref backedge_ref = bc.value_map[phi_val.operands[1]];
+                    ir_PHI_SET_OP(outer_phi_ref, 2, backedge_ref);
+                    break;
+                }
+            }
         }
     }
 
@@ -526,17 +546,24 @@ void IRBridge::handlePhi(BuildContext& bc, const Value& val) {
         ir_ref loop_begin_ref = ctx->control;  // 記錄 LOOP_BEGIN
 
         // 如果 entry_val 是另一個 PHI，用 VSTORE/VLOAD 打破 PHI-PHI chain
-        if (val.use_vload_entry) {
-            // 改從 local VAR 做 VLOAD
+        if (val.use_vload_entry && loop_stack.size() >= 2) {
             int local_idx = val.local_index;
-            if (local_idx >= 0 && bc.local_vars.count(local_idx)) {
-                entry_val = ir_VLOAD_I32(bc.local_vars[local_idx]);
-                ctx->control = loop_begin_ref;  // 恢復 control
-            }
+            LoopInfo& outer_loop = loop_stack[loop_stack.size() - 2];
+            ir_ref inner_loop_begin = ctx->control;
+            // 切換到 outer loop 建 PHI
+            ctx->control = outer_loop.loop_begin;
+            ir_ref outer_phi = ir_PHI_2(IR_I32, ir_CONST_I32(0), IR_UNUSED);
+            outer_loop.outer_carry_phis[local_idx] = outer_phi;
+            // 切回 inner loop
+            ctx->control = inner_loop_begin;
+            entry_val = outer_phi;
         }
 
-        ir_ref phi = ir_PHI_2(IR_I32, entry_val, IR_UNUSED);
-        bc.value_map[i] = phi;
+        ir_ref inputs[2] = {entry_val, IR_UNUSED};
+        ir_ref phi = ir_emit_N(ctx, IR_OPT(IR_PHI, IR_I32), 3);
+        ir_set_op(ctx, phi, 1, ctx->control);
+        ir_set_op(ctx, phi, 2, entry_val);
+        ir_set_op(ctx, phi, 3, IR_UNUSED);        bc.value_map[i] = phi;
         if (!loop_stack.empty()) loop_stack.back().phi_ids.push_back(i);
         TRACE("  v%zu = Phi (Loop) -> ref %d\n\n", i, phi);
     } else {
