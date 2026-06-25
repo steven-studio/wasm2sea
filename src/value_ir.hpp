@@ -154,6 +154,25 @@ inline std::string opToString(Op op) {  // 改：Op → ValueOp
     case Op::MemoryFill: return "MemoryFill";  // 新增
     case Op::MemoryCopy: return "MemoryCopy";  // 新增
     case Op::Return: return "Return";
+    case Op::Load:          return "Load";
+    case Op::Store:         return "Store";
+    case Op::F64Load:       return "F64Load";
+    case Op::F64Store:      return "F64Store";
+    case Op::I32WrapI64:    return "I32WrapI64";
+    case Op::I64ExtendI32S: return "I64ExtendI32S";
+    case Op::I64ExtendI32U: return "I64ExtendI32U";
+    case Op::F64ConvertI32S: return "F64ConvertI32S";
+    case Op::F64ConvertI32U: return "F64ConvertI32U";
+    case Op::F64ConvertI64S: return "F64ConvertI64S";
+    case Op::F64ConvertI64U: return "F64ConvertI64U";
+    case Op::I32TruncF64S:  return "I32TruncF64S";
+    case Op::I32TruncF64U:  return "I32TruncF64U";
+    case Op::I64TruncF64S:  return "I64TruncF64S";
+    case Op::I64TruncF64U:  return "I64TruncF64U";
+    case Op::F64Add:        return "F64Add";
+    case Op::F64Sub:        return "F64Sub";
+    case Op::F64Mul:        return "F64Mul";
+    case Op::F64Div:        return "F64Div";
     default:         return "Unknown";
     }
     return "?";
