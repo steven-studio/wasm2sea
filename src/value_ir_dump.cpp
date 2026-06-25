@@ -12,6 +12,9 @@ void dumpValueIR(const ValueIR& values) {
         case Op::I32Const:
             std::cout << "(" << v.constValue << ")";
             break;
+        case Op::I64Const:
+            std::cout << "(" << v.constValue << ")";
+            break;
         case Op::Add:
         case Op::Sub:
         case Op::Mul:
@@ -85,6 +88,18 @@ void dumpValueIR(const ValueIR& values) {
                 std::cout << "(target: v" << v.lhs << ", kind: loop_back)";
             else
                 std::cout << "(kind: block/if_exit)";
+            break;
+        case Op::Load:
+            std::cout << "(ptr=v" << v.lhs << ")";
+            break;
+        case Op::Store:
+            std::cout << "(ptr=v" << v.lhs << ", val=v" << v.rhs << ")";
+            break;
+        case Op::F64Load:
+            std::cout << "(ptr=v" << v.lhs << ")";
+            break;
+        case Op::F64Store:
+            std::cout << "(ptr=v" << v.lhs << ", val=v" << v.rhs << ")";
             break;
         case Op::Return:
             std::cout << "(v" << v.lhs << ")";

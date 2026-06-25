@@ -388,12 +388,14 @@ static void handle_Loop(LowerContext& ctx, const Instr&, size_t idx) {
         ctx.values[phi_id].local_index = i;
 
         // 檢查外層 loop 是否需要 VLOAD
-        for (auto& outer : ctx.control_stack) {
-            if (outer.type == ControlFrame::Loop &&
-                outer.loop_phis.count(i) == 0 &&
-                !outer.set_before_inner.count(i)) {
-                ctx.values[phi_id].use_vload_entry = true;
-                break;
+        for (int k = (int)ctx.control_stack.size() - 1; k >= 0; k--) {
+            if (ctx.control_stack[k].type == ControlFrame::Loop) {
+                auto& outer = ctx.control_stack[k];
+                if (outer.loop_phis.count(i) == 0 &&
+                    !outer.set_before_inner.count(i)) {
+                    ctx.values[phi_id].use_vload_entry = true;
+                }
+                break;  // 只看最近一層，不繼續往外找
             }
         }
         fprintf(stderr, "  [PHI CREATE] v%d = Phi(v%d) for local_%d%s\n",
