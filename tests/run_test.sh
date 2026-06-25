@@ -55,4 +55,3 @@ else
 fi
 
 ./a.out "$@"
-EOF

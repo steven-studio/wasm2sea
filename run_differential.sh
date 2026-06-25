@@ -893,6 +893,11 @@ TESTS=(
   "matmul 6"
   "matmul 7"
   "matmul 8"
+  "call_simple 1"
+  "call_simple 2"
+  "call_simple 3"
+  "call_simple 5"
+  "call_simple 10"
 )
 
 PASS=0

@@ -9,6 +9,7 @@
 
 extern "C" {
 #include "ir.h"
+
 }
 
 static void usage(const char* prog) {
@@ -19,6 +20,13 @@ static void usage(const char* prog) {
 }
 
 static uint8_t wasm_memory[65536] = {0};
+
+// 把不合法的 C 識別符轉成合法的（e.g. "0" -> "func_0"）
+static std::string sanitize_cname(const std::string& name) {
+    if (name.empty()) return "func_unknown";
+    if (std::isdigit((unsigned char)name[0])) return "func_" + name;
+    return name;
+}
 
 int main(int argc, char* argv[]) {
     std::cout << "=== Wasm2Sea Compiler Pipeline ===\n\n";
@@ -71,6 +79,10 @@ int main(int argc, char* argv[]) {
     if (dot != std::string::npos) baseName = baseName.substr(0, dot);
     std::string irPath = baseName + ".ir";
     FILE* irFile = fopen(irPath.c_str(), "w");
+    std::string cPath = std::string(getenv("HOME")) + "/wasm2sea/third_party/dstogov-ir/out.c";
+    FILE* cFile = fopen(cPath.c_str(), "w");
+    fprintf(cFile, "#include <stdint.h>\n#include <stdbool.h>\n\n");
+    fclose(cFile);
 
     // ✅ 处理所有函数
     for (size_t i = 0; i < functions.size(); i++) {
@@ -115,11 +127,43 @@ int main(int argc, char* argv[]) {
         ir_save(bridge.getCtx(), 0, irFile);
         std::cout << "Appended IR to: " << irPath << "\n";
 
+        // 輸出 C code: run minimal passes then emit C
+        {
+            ir_ctx* ctx = bridge.getCtx();
+            ir_build_def_use_lists(ctx);
+            ir_build_cfg(ctx);
+            ir_build_dominators_tree(ctx);
+            ir_find_loops(ctx);
+            ir_gcm(ctx);
+            ir_schedule(ctx);
+            ir_assign_virtual_registers(ctx);
+            ir_compute_live_ranges(ctx);
+            ir_coalesce(ctx);
+            std::string cname = sanitize_cname(func.name);
+            char tmpPath[256];
+            snprintf(tmpPath, sizeof(tmpPath), "/tmp/wasm2sea_%zu.c", i);
+
+            FILE* tmpFile = fopen(tmpPath, "w");
+            ir_emit_c(ctx, cname.c_str(), tmpFile);
+            fclose(tmpFile);
+
+            FILE* appendFile = fopen(cPath.c_str(), "a");
+            tmpFile = fopen(tmpPath, "r");
+            char buf[4096];
+            while (fgets(buf, sizeof(buf), tmpFile)) {
+                fputs(buf, appendFile);
+            }
+            fprintf(appendFile, "\n");
+            fclose(tmpFile);
+            fclose(appendFile);
+        }
+
         // 清理
         delete fn;
     }
 
     fclose(irFile);
+    // fclose(cFile);
     std::cout << "Saved IR to: " << irPath << "\n";
     
     // ✅ 移到这里：循环外
