@@ -1,5 +1,5 @@
 (module
-  (func (export "nested_loop") (result i32)
+  (func (export "test") (result i32)
     (local $i i32)
     (local $j i32)
     (local $sum i32)
