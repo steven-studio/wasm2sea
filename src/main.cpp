@@ -82,6 +82,10 @@ int main(int argc, char* argv[]) {
     std::string cPath = std::string(getenv("HOME")) + "/wasm2sea/third_party/dstogov-ir/out.c";
     FILE* cFile = fopen(cPath.c_str(), "w");
     fprintf(cFile, "#include <stdint.h>\n#include <stdbool.h>\n\n");
+    // forward declarations for local vars used by ir_emit_c
+    for (int _li = 0; _li < 16; _li++)
+        fprintf(cFile, "static int32_t local_%d;\n", _li);
+    fprintf(cFile, "\n");
     fclose(cFile);
 
     // ✅ 处理所有函数
@@ -143,18 +147,9 @@ int main(int argc, char* argv[]) {
             char tmpPath[256];
             snprintf(tmpPath, sizeof(tmpPath), "/tmp/wasm2sea_%zu.c", i);
 
-            FILE* tmpFile = fopen(tmpPath, "w");
-            ir_emit_c(ctx, cname.c_str(), tmpFile);
-            fclose(tmpFile);
-
             FILE* appendFile = fopen(cPath.c_str(), "a");
-            tmpFile = fopen(tmpPath, "r");
-            char buf[4096];
-            while (fgets(buf, sizeof(buf), tmpFile)) {
-                fputs(buf, appendFile);
-            }
+            ir_emit_c(ctx, cname.c_str(), appendFile);
             fprintf(appendFile, "\n");
-            fclose(tmpFile);
             fclose(appendFile);
         }
 

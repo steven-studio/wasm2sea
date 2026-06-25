@@ -515,6 +515,8 @@ static void handle_Call(LowerContext& ctx, const Instr& ins, size_t) {
     int callee_idx = ins.operand;
     int id = ctx.newValue(Op::Call);
     ctx.values[id].lhs = callee_idx;
+    fprintf(stderr, "[handle_Call] callee_idx=%d, funcNames.size=%zu\n", callee_idx, ctx.funcNames.size());
+    for (size_t _i = 0; _i < ctx.funcNames.size(); _i++) fprintf(stderr, "  funcNames[%zu]=%s\n", _i, ctx.funcNames[_i].c_str());
     if (callee_idx >= 0 && callee_idx < (int)ctx.funcNames.size())
         ctx.values[id].callee_name = ctx.funcNames[callee_idx];
     std::vector<int> args(num_args);

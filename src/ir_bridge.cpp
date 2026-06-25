@@ -822,6 +822,7 @@ IRFunction* IRBridge::build(const ValueIR& values,
     while (!if_stack.empty()) if_stack.pop();
     while (!loop_stack.empty()) loop_stack.pop_back();
     ir_init(ctx_, IR_FUNCTION, 128, 128);
+    ctx_->ret_type = IR_I32;
 
     ir_START();
     ir_ref start = ctx_->ir_base[1].op2;

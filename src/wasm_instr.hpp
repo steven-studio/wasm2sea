@@ -106,11 +106,9 @@ enum class WasmOp {
 
 struct Instr {
     WasmOp op = WasmOp::Unsupported;
-    union {
-        int operand;
-        double foperand;
-        int64_t i64operand;
-    };
+    int operand = 0;
+    double foperand = 0.0;
+    int64_t i64operand = 0;
 };
 
 struct InstrSeq {

@@ -898,6 +898,16 @@ TESTS=(
   "call_simple 3"
   "call_simple 5"
   "call_simple 10"
+  "factorial_rec 1"
+  "factorial_rec 2"
+  "factorial_rec 3"
+  "factorial_rec 4"
+  "factorial_rec 5"
+  "factorial_rec 6"
+  "factorial_rec 7"
+  "factorial_rec 8"
+  "factorial_rec 9"
+  "factorial_rec 10"
 )
 
 PASS=0
