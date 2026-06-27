@@ -103,11 +103,8 @@ int main(int argc, char* argv[]) {
         std::cout << "Step 1: Lowering Wasm to ValueIR\n";
         std::cout << "================================\n";
 
-        // ===== 添加这里 =====
-        printf("\n");
-        dumpInstrSeq(code);  // 打印 Stage 1 输出
-        printf("\n");
-        // ===================
+        // debug dump disabled for benchmark mode
+        // dumpInstrSeq(code);
 
         // 建函數名稱表
         std::vector<std::string> funcNames;
@@ -115,7 +112,7 @@ int main(int argc, char* argv[]) {
             funcNames.push_back(f.name);
 
         ValueIR values = lowerWasmToSsa(code, funcNames);
-        dumpValueIR(values);
+        // dumpValueIR(values);
 
         // Step 2: ValueIR → dstogov/ir
         std::cout << "\nStep 2: Building dstogov/ir Graph\n";
@@ -124,8 +121,7 @@ int main(int argc, char* argv[]) {
         IRBridge bridge;
         IRFunction* fn = bridge.build(values, func.paramTypes);
         
-        // 印出 dstogov/ir 的 IR graph
-        bridge.dump(fn);
+        // bridge.dump(fn);  // disabled for benchmark mode
 
         // 保存每个函数的 IR
         ir_save(bridge.getCtx(), 0, irFile);

@@ -427,9 +427,9 @@ static void handle_Br_if(LowerContext& ctx, const Instr& ins, size_t) {
     int depth = ins.operand;
     if (depth >= (int)ctx.control_stack.size()) return;
 
-    fprintf(stderr, "[BR_IF] depth=%d, control_stack size=%zu, target type=%d\n",
-            ins.operand, ctx.control_stack.size(),
-            (int)ctx.control_stack[ctx.control_stack.size() - 1 - ins.operand].type);
+//    fprintf(stderr, "[BR_IF] depth=%d, control_stack size=%zu, target type=%d\n",
+//            ins.operand, ctx.control_stack.size(),
+//            (int)ctx.control_stack[ctx.control_stack.size() - 1 - ins.operand].type);
 
     ControlFrame& target = ctx.control_stack[ctx.control_stack.size() - 1 - depth];
 
@@ -515,8 +515,8 @@ static void handle_Call(LowerContext& ctx, const Instr& ins, size_t) {
     int callee_idx = ins.operand;
     int id = ctx.newValue(Op::Call);
     ctx.values[id].lhs = callee_idx;
-    fprintf(stderr, "[handle_Call] callee_idx=%d, funcNames.size=%zu\n", callee_idx, ctx.funcNames.size());
-    for (size_t _i = 0; _i < ctx.funcNames.size(); _i++) fprintf(stderr, "  funcNames[%zu]=%s\n", _i, ctx.funcNames[_i].c_str());
+//    fprintf(stderr, "[handle_Call] callee_idx=%d, funcNames.size=%zu\n", callee_idx, ctx.funcNames.size());
+//    for (size_t _i = 0; _i < ctx.funcNames.size(); _i++) fprintf(stderr, "  funcNames[%zu]=%s\n", _i, ctx.funcNames[_i].c_str());
     if (callee_idx >= 0 && callee_idx < (int)ctx.funcNames.size())
         ctx.values[id].callee_name = ctx.funcNames[callee_idx];
     std::vector<int> args(num_args);
@@ -710,20 +710,21 @@ static ValueIR cleanupValueIR(ValueIR& values) {
             default: break;
         }
     }
-    bool changed = true;
-    while (changed) {
-        changed = false;
-        for (size_t i = 0; i < values.size(); i++) {
-            if (!used[i]) continue;
-            auto mark = [&](int ref) {
-                if (ref >= 0 && ref < (int)values.size() && !used[ref]) {
-                    used[ref] = true; changed = true;
-                }
-            };
-            mark(values[i].lhs);
-            mark(values[i].rhs);
-            for (int op : values[i].operands) mark(op);
-        }
+    /* worklist-based mark: O(n) instead of O(n^2) */
+    std::vector<int> worklist;
+    for (size_t i = 0; i < values.size(); i++)
+        if (used[i]) worklist.push_back((int)i);
+    while (!worklist.empty()) {
+        int idx = worklist.back(); worklist.pop_back();
+        auto mark = [&](int ref) {
+            if (ref >= 0 && ref < (int)values.size() && !used[ref]) {
+                used[ref] = true;
+                worklist.push_back(ref);
+            }
+        };
+        mark(values[idx].lhs);
+        mark(values[idx].rhs);
+        for (int op : values[idx].operands) mark(op);
     }
 
     // Step 5: remap IDs
@@ -731,7 +732,7 @@ static ValueIR cleanupValueIR(ValueIR& values) {
     int new_id = 0;
     for (size_t i = 0; i < values.size(); i++) {
         if (used[i]) id_map[i] = new_id++;
-        else fprintf(stderr, "[DEAD] v%d removed\n", (int)i);
+        // else fprintf(stderr, "[DEAD] v%d removed\n", (int)i);
     }
 
     // Step 6: 重建
@@ -741,12 +742,17 @@ static ValueIR cleanupValueIR(ValueIR& values) {
         if (!used[i]) continue;
         Value v = values[i];
         v.id = id_map[i];
-        if (v.lhs != -1) v.lhs = id_map[v.lhs];
-        if (v.rhs != -1) v.rhs = id_map[v.rhs];
-        for (auto& op : v.operands) op = id_map[op];
+        if (v.lhs != -1 && v.lhs < (int)id_map.size()) v.lhs = id_map[v.lhs];
+        else if (v.lhs != -1) v.lhs = -1;
+        if (v.rhs != -1 && v.rhs < (int)id_map.size()) v.rhs = id_map[v.rhs];
+        else if (v.rhs != -1) v.rhs = -1;
+        for (auto& op : v.operands) {
+            if (op >= 0 && op < (int)id_map.size()) op = id_map[op];
+            else op = -1;
+        }
         result.push_back(v);
     }
-    fprintf(stderr, "[CLEANUP] %zu → %zu nodes\n\n", values.size(), result.size());
+        // fprintf(stderr, "[CLEANUP] %zu → %zu nodes\n\n", values.size(), result.size());
     return result;
 }
 

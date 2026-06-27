@@ -1,7 +1,7 @@
-#define ENABLE_IR_TRACE 1
+#define ENABLE_IR_TRACE 0
 
 #if ENABLE_IR_TRACE
-#define TRACE(...) fprintf(stderr, "[IR_TRACE] " __VA_ARGS__)
+        // #define TRACE(...) fprintf(stderr, "[IR_TRACE] " __VA_ARGS__)
 #else
 #define TRACE(...) do {} while(0)
 #endif
@@ -388,7 +388,7 @@ void IRBridge::handleElse(BuildContext& bc, const Value& val) {
 void IRBridge::handleEnd(BuildContext& bc, const Value& val) {
     ir_ctx* ctx = bc.ctx;
     size_t i = bc.current_index;
-    fprintf(stderr, "DEBUG: Op::End reached, if_stack.size()=%zu\n", if_stack.size());
+        // fprintf(stderr, "DEBUG: Op::End reached, if_stack.size()=%zu\n", if_stack.size());
     if (!if_stack.empty()) {
         IfInfo info = if_stack.top();
         if_stack.pop();

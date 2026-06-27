@@ -131,7 +131,7 @@ public:
         Instr instr;
         instr.op = WasmOp::Call;
         int cidx = getFunctionIndex(n->target);
-        fprintf(stderr, "[CALL] target name=%s, index=%d\n", std::string(n->target.str).c_str(), cidx);
+//        fprintf(stderr, "[CALL] target name=%s, index=%d\n", std::string(n->target.str).c_str(), cidx);
         instr.operand = cidx;
         instr.foperand = (double)n->operands.size();
         instructions.push_back(instr);

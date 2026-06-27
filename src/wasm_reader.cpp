@@ -117,11 +117,16 @@ std::vector<FunctionResult> readWasmFile(const std::string& filename) {
         size_t numParams = func->getNumParams();
         printf("Function has %zu parameters\n", numParams);
         
+        // skip import functions (no body)
+        if (!func->body) {
+            fprintf(stderr, "  Skipping import function (no body)\n");
+            continue;
+        }
+
         // 使用 walker 轉換
         WasmToInstrSeqConverter converter;
         converter.modulePtr = &module;
-        // converter.numParams = numParams;  // ← 删除这行，Visitor 不需要
-        converter.visitExpression(func->body);  // ← 改用 visitExpression
+        converter.visitExpression(func->body);
 
         // 构建返回结果
         InstrSeq instrSeq;
@@ -135,15 +140,15 @@ std::vector<FunctionResult> readWasmFile(const std::string& filename) {
         funcResult.name = funcName;           // ← 保存函数名
         funcResult.numParams = numParams;     // ← 保存参数数量
         funcResult.instructions = instrSeq;   // ← 保存指令序列
-        fprintf(stderr, "DEBUG: filling paramTypes, numParams=%zu\n", func->getNumParams());
+        // fprintf(stderr, "DEBUG: filling paramTypes, numParams=%zu\n", func->getNumParams());
         for (size_t j = 0; j < func->getNumParams(); j++) {
             wasm::Type t = func->getLocalType(j);
-            fprintf(stderr, "DEBUG: param[%zu] type=%s\n", j, t.toString().c_str());
+        // fprintf(stderr, "DEBUG: param[%zu] type=%s\n", j, t.toString().c_str());
             if (t == wasm::Type::i64)      funcResult.paramTypes.push_back(ParamType::I64);
             else if (t == wasm::Type::f64) funcResult.paramTypes.push_back(ParamType::F64);
             else                            funcResult.paramTypes.push_back(ParamType::I32);
         }
-        fprintf(stderr, "DEBUG: paramTypes.size()=%zu\n", funcResult.paramTypes.size());
+        // fprintf(stderr, "DEBUG: paramTypes.size()=%zu\n", funcResult.paramTypes.size());
 
         results.push_back(funcResult);        // ← 添加到 results！
         
