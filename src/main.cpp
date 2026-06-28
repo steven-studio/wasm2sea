@@ -111,7 +111,7 @@ int main(int argc, char* argv[]) {
             funcNames.push_back(f.name);
 
         ValueIR values = lowerWasmToSsa(code, funcNames);
-        dumpValueIR(values);
+        // dumpValueIR(values);
 
         // Step 2: ValueIR → dstogov/ir
         std::cout << "\nStep 2: Building dstogov/ir Graph\n";
