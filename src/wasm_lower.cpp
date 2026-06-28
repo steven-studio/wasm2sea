@@ -134,10 +134,10 @@ MAKE_BINARY(I64Sub,  Sub,   I64)
 MAKE_BINARY(I64Mul,  Mul,   I64)
 MAKE_BINARY(I64DivS, Div_S, I64)
 MAKE_BINARY(I64RemS, Rem_S, I64)
-MAKE_BINARY(F64Add,  F64Add, I32)
-MAKE_BINARY(F64Sub,  F64Sub, I32)
-MAKE_BINARY(F64Mul,  F64Mul, I32)
-MAKE_BINARY(F64Div,  F64Div, I32)
+MAKE_BINARY(F64Add,  F64Add, F64)
+MAKE_BINARY(F64Sub,  F64Sub, F64)
+MAKE_BINARY(F64Mul,  F64Mul, F64)
+MAKE_BINARY(F64Div,  F64Div, F64)
 
 #define MAKE_UNARY(wasmOp, irOp, vtype) \
     static void handle_##wasmOp(LowerContext& ctx, const Instr&, size_t) { \
@@ -177,7 +177,7 @@ static void handle_I64Const(LowerContext& ctx, const Instr& ins, size_t) {
 
 static void handle_F64Const(LowerContext& ctx, const Instr& ins, size_t) {
     int id = ctx.newValue(Op::F64Const);
-    ctx.values[id].constValue = ins.foperand;
+    ctx.values[id].fconst = ins.foperand;
     ctx.stack.push_back(id);
 }
 

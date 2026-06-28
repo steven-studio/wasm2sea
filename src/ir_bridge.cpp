@@ -315,7 +315,7 @@ void IRBridge::handleI64Const(BuildContext& bc, const Value& val) {
 
 void IRBridge::handleF64Const(BuildContext& bc, const Value& val) {
     ir_ctx* ctx = bc.ctx;
-    bc.value_map[bc.current_index] = ir_CONST_DOUBLE(val.constValue);
+    bc.value_map[bc.current_index] = ir_CONST_DOUBLE(val.fconst);
 }
 
 // ----- Locals -----
@@ -673,7 +673,8 @@ void IRBridge::handleF64Load(BuildContext& bc, const Value& val) {
     if (val.lhs < 0 || val.lhs >= (int)i) return;
     ir_ref ptr_ref = bc.value_map[val.lhs];
     if (ptr_ref == IR_UNUSED) return;
-    bc.value_map[i] = ir_LOAD_D(ptr_ref);
+    ir_ref real_ptr = ir_ADD_A(bc.mem_param, ptr_ref);
+    bc.value_map[i] = ir_LOAD_D(real_ptr);
 }
 
 void IRBridge::handleF64Store(BuildContext& bc, const Value& val) {
@@ -681,7 +682,8 @@ void IRBridge::handleF64Store(BuildContext& bc, const Value& val) {
     if (val.lhs < 0 || val.rhs < 0) return;
     ir_ref ptr_ref = bc.value_map[val.lhs], val_ref = bc.value_map[val.rhs];
     if (ptr_ref == IR_UNUSED || val_ref == IR_UNUSED) return;
-    ir_STORE(ptr_ref, val_ref);
+    ir_ref real_ptr = ir_ADD_A(bc.mem_param, ptr_ref);
+    ir_STORE(real_ptr, val_ref);
 }
 
 // ----- F64 Arithmetic -----

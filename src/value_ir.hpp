@@ -90,6 +90,7 @@ struct Value {
 
     int paramIndex = -1;  // for Param
     int constValue = 0;   // for I32Const
+    double fconst = 0.0;   // for F64Const
     int lhs = -1;         // 對 binary op / Return 使用
     int rhs = -1;         // for binary op
 
