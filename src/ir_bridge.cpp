@@ -484,17 +484,32 @@ void IRBridge::handleBrIf(BuildContext& bc, const Value& val) {
     }
 
     // br_if depth=0: continue loop / backedge
-    LoopInfo& loop_info = loop_stack.back();
-
+    // find the target loop by loop_value_id (val.rhs)
+    LoopInfo* target_loop_ptr = nullptr;
+    for (int k = (int)loop_stack.size() - 1; k >= 0; k--) {
+        if (loop_stack[k].loop_value_id == val.rhs) {
+            target_loop_ptr = &loop_stack[k];
+            break;
+        }
+    }
+    if (!target_loop_ptr) target_loop_ptr = &loop_stack.back();
+    LoopInfo& loop_info = *target_loop_ptr;
     for (int phi_id : loop_info.phi_ids) {
         const Value& phi_val = bc.values[phi_id];
         if (phi_val.operands.size() >= 2) {
             ir_ref phi_ref = bc.value_map[phi_id];
             ir_ref backedge_ref = bc.value_map[phi_val.operands[1]];
-            ir_PHI_SET_OP(phi_ref, 2, backedge_ref);
+            if (phi_ref > 0 && backedge_ref > 0) {
+                // op1=control, op2=entry, op3=back-edge (IR_UNUSED placeholder)
+                // only set if op3 is still IR_UNUSED
+                ir_insn* phi_insn = &ctx->ir_base[phi_ref];
+                if (phi_insn->op3 == IR_UNUSED)
+                    ir_PHI_SET_OP(phi_ref, 2, backedge_ref);
+                else
+                    ir_PHI_SET_OP(phi_ref, 2, backedge_ref);
+            }
         }
     }
-
     ir_IF_TRUE(if_node);
     ir_ref loop_end_ref = ir_LOOP_END();
     ir_MERGE_SET_OP(loop_info.loop_begin, 2, loop_end_ref);
@@ -503,7 +518,7 @@ void IRBridge::handleBrIf(BuildContext& bc, const Value& val) {
 }
 
 void IRBridge::handleBr(BuildContext& bc, const Value& val) {
-        // fprintf(stderr, "[BR_BRIDGE] val.lhs=%d, val.rhs=%d\n", val.lhs, val.rhs);
+        //
     ir_ctx* ctx = bc.ctx;
     size_t i = bc.current_index;
     if (val.lhs < 0) return;  // Block target
@@ -529,8 +544,6 @@ void IRBridge::handleBr(BuildContext& bc, const Value& val) {
         if ((int)phi_val.operands.size() >= 2) {
             ir_ref phi_ref = bc.value_map[phi_id];
             ir_ref backedge_ref = bc.value_map[phi_val.operands[1]];
-        // fprintf(stderr, "[BR] Adding back-edge value v%d for local_%d to phi v%d\n",
-                    // phi_val.operands[1], phi_val.local_index, phi_id);
             ir_PHI_SET_OP(phi_ref, 2, backedge_ref);
         }
     }
@@ -562,7 +575,6 @@ void IRBridge::handleBr(BuildContext& bc, const Value& val) {
 
     ir_ref loop_end_ref = ir_LOOP_END();
     ir_MERGE_SET_OP(target_loop->loop_begin, 2, loop_end_ref);
-    fprintf(stderr, "[BR] exits.size=%zu\n", target_loop->exits.size());
     if (!target_loop->exits.empty()) {
         ir_MERGE_2(loop_end_ref, target_loop->exits[0]);
     }
@@ -586,7 +598,7 @@ void IRBridge::handlePhi(BuildContext& bc, const Value& val) {
             // 切換到 outer loop 建 PHI
             ctx->control = outer_loop.loop_begin;
             ir_ref outer_phi = ir_PHI_2(IR_I32, ir_CONST_I32(0), IR_UNUSED);
-        // fprintf(stderr, "[OUTER_PHI_BUILD] outer_phi=ref%d, ctx->control=%d\n", outer_phi, ctx->control);
+        //
             // 用 COPY_HARD 包住 outer PHI，讓 optimizer 不折疊
             ir_ref hard_copy = ir_emit2(ctx, IR_OPT(IR_COPY, IR_I32), outer_phi, IR_COPY_HARD);
             outer_loop.outer_carry_phis[local_idx] = outer_phi;
@@ -596,10 +608,12 @@ void IRBridge::handlePhi(BuildContext& bc, const Value& val) {
 
         ir_ref inputs[2] = {entry_val, IR_UNUSED};
         ir_ref phi = ir_emit_N(ctx, IR_OPT(IR_PHI, IR_I32), 3);
-        // fprintf(stderr, "[PHI_BUILD] v%zu: phi=ref%d, ctx->control=%d\n", i, phi, ctx->control);
+        //
         ir_set_op(ctx, phi, 1, ctx->control);
         ir_set_op(ctx, phi, 2, entry_val);
-        ir_set_op(ctx, phi, 3, IR_UNUSED);        bc.value_map[i] = phi;
+        ir_set_op(ctx, phi, 3, IR_UNUSED);
+
+        bc.value_map[i] = phi;
         if (!loop_stack.empty()) loop_stack.back().phi_ids.push_back(i);
         TRACE("  v%zu = Phi (Loop) -> ref %d\n\n", i, phi);
     } else {
