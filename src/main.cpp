@@ -161,7 +161,6 @@ int main(int argc, char* argv[]) {
         // 清理
         delete fn;
     }
-
     fclose(irFile);
     std::cout << "Saved IR to: " << irPath << "\n";
 
