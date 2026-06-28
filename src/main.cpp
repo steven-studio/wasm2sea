@@ -129,14 +129,23 @@ int main(int argc, char* argv[]) {
         // 輸出 C code: run minimal passes then emit C
         {
             ir_ctx* ctx = bridge.getCtx();
+            printf("  pass: def_use_lists\n"); fflush(stdout);
             ir_build_def_use_lists(ctx);
+            printf("  pass: cfg\n"); fflush(stdout);
             ir_build_cfg(ctx);
+            printf("  pass: dominators\n"); fflush(stdout);
             ir_build_dominators_tree(ctx);
+            printf("  pass: loops\n"); fflush(stdout);
             ir_find_loops(ctx);
+            printf("  pass: gcm\n"); fflush(stdout);
             ir_gcm(ctx);
+            printf("  pass: schedule\n"); fflush(stdout);
             ir_schedule(ctx);
+            printf("  pass: vregs\n"); fflush(stdout);
             ir_assign_virtual_registers(ctx);
+            printf("  pass: live_ranges\n"); fflush(stdout);
             ir_compute_live_ranges(ctx);
+            printf("  pass: coalesce\n"); fflush(stdout);
             ir_coalesce(ctx);
             std::string cname = sanitize_cname(func.name);
             char tmpPath[256];
