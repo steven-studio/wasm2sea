@@ -70,6 +70,8 @@ public:
     void handleLocalGet(BuildContext& bc, const Value& val);
     void handleLocalSet(BuildContext& bc, const Value& val);
     void handleLocalTee(BuildContext& bc, const Value& val);
+    void handleGlobalGet(BuildContext& bc, const Value& val);
+    void handleGlobalSet(BuildContext& bc, const Value& val);
     void handleIf(BuildContext& bc, const Value& val);
     void handleElse(BuildContext& bc, const Value& val);
     void handleEnd(BuildContext& bc, const Value& val);

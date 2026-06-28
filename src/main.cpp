@@ -6,6 +6,9 @@
 #include "wasm_dump.hpp"
 #include <iostream>
 #include <string>
+#include <fstream>
+#include <regex>
+#include <set>
 
 extern "C" {
 #include "ir.h"
@@ -81,11 +84,7 @@ int main(int argc, char* argv[]) {
     FILE* irFile = fopen(irPath.c_str(), "w");
     std::string cPath = std::string(getenv("HOME")) + "/wasm2sea/third_party/dstogov-ir/out.c";
     FILE* cFile = fopen(cPath.c_str(), "w");
-    fprintf(cFile, "#include <stdint.h>\n#include <stdbool.h>\n\n");
-    // forward declarations for local vars used by ir_emit_c
-    for (int _li = 0; _li < 16; _li++)
-        fprintf(cFile, "static int32_t local_%d;\n", _li);
-    fprintf(cFile, "\n");
+    // header will be written after processing all functions
     fclose(cFile);
 
     // ✅ 处理所有函数
@@ -154,14 +153,38 @@ int main(int argc, char* argv[]) {
     }
 
     fclose(irFile);
-    // fclose(cFile);
     std::cout << "Saved IR to: " << irPath << "\n";
-    
-    // ✅ 移到这里：循环外
+
+    // 掃描 out.c 找出實際用到的 local_N，動態生成 header
+    {
+        std::ifstream scan_f(cPath);
+        std::string scan_content((std::istreambuf_iterator<char>(scan_f)),
+                                  std::istreambuf_iterator<char>());
+        scan_f.close();
+
+        std::set<int> used_locals;
+        std::regex local_re("local_(\\d+)");
+        auto begin = std::sregex_iterator(scan_content.begin(), scan_content.end(), local_re);
+        auto end_it = std::sregex_iterator();
+        for (auto it = begin; it != end_it; ++it)
+            used_locals.insert(std::stoi((*it)[1].str()));
+
+        std::string header = "#include <stdint.h>\n#include <stdbool.h>\n\n";
+        for (int idx : used_locals)
+            header += "static int32_t local_" + std::to_string(idx) + ";\n";
+        for (int _gi = 0; _gi < g_wasm_global_count; _gi++)
+            header += "static int32_t wasm_global_" + std::to_string(_gi) + ";\n";
+        header += "\n";
+
+        std::ofstream out_f(cPath);
+        out_f << header << scan_content;
+        out_f.close();
+    }
+
     std::cout << "\n" << std::string(70, '=') << "\n";
     std::cout << "=== Compilation Complete ===\n";
     std::cout << "Successfully processed " << functions.size() << " function(s)\n";
     std::cout << std::string(70, '=') << "\n";
-    
+
     return 0;
 }

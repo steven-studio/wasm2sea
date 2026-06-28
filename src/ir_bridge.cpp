@@ -47,6 +47,7 @@ struct BuildContext {
     std::vector<ir_ref>& value_map;
     std::unordered_map<int, ir_ref>& local_vars;
     std::unordered_map<int, ir_type>& local_types;
+    std::unordered_map<int, ir_ref>& global_vars;
     ir_ref mem_param;
     bool has_memory_ops;
     size_t current_index;
@@ -343,6 +344,31 @@ void IRBridge::handleLocalSet(BuildContext& bc, const Value& val) {
     TRACE("  v%zu = LocalSet(local_%d, v%d)\n\n", i, var_idx, val.lhs);
 }
 
+void IRBridge::handleGlobalGet(BuildContext& bc, const Value& val) {
+    ir_ctx* ctx = bc.ctx;
+    size_t i = bc.current_index;
+    int gidx = val.globalIndex;
+    auto it = bc.global_vars.find(gidx);
+    if (it == bc.global_vars.end()) {
+        fprintf(stderr, "ERROR: GlobalGet for untracked wasm_global_%d\n", gidx);
+        return;
+    }
+    bc.value_map[i] = ir_VLOAD_I32(it->second);
+}
+
+void IRBridge::handleGlobalSet(BuildContext& bc, const Value& val) {
+    ir_ctx* ctx = bc.ctx;
+    size_t i = bc.current_index;
+    int gidx = val.globalIndex;
+    auto it = bc.global_vars.find(gidx);
+    if (it == bc.global_vars.end()) {
+        fprintf(stderr, "ERROR: GlobalSet for untracked wasm_global_%d\n", gidx);
+        return;
+    }
+    if (val.lhs < 0 || val.lhs >= (int)i) return;
+    ir_VSTORE(it->second, bc.value_map[val.lhs]);
+}
+
 void IRBridge::handleLocalTee(BuildContext& bc, const Value& val) {
     ir_ctx* ctx = bc.ctx;
     size_t i = bc.current_index;
@@ -474,7 +500,7 @@ void IRBridge::handleBrIf(BuildContext& bc, const Value& val) {
 }
 
 void IRBridge::handleBr(BuildContext& bc, const Value& val) {
-    fprintf(stderr, "[BR_BRIDGE] val.lhs=%d, val.rhs=%d\n", val.lhs, val.rhs);
+        // fprintf(stderr, "[BR_BRIDGE] val.lhs=%d, val.rhs=%d\n", val.lhs, val.rhs);
     ir_ctx* ctx = bc.ctx;
     size_t i = bc.current_index;
     if (val.lhs < 0) return;  // Block target
@@ -487,10 +513,10 @@ void IRBridge::handleBr(BuildContext& bc, const Value& val) {
             break;
         }
     }
-    fprintf(stderr, "[BR_FIND] val.lhs=%d, loop_stack.size=%zu, target_loop=%p\n",
-        val.lhs, loop_stack.size(), (void*)target_loop);    
+        // fprintf(stderr, "[BR_FIND] val.lhs=%d, loop_stack.size=%zu, target_loop=%p\n",
+        // val.lhs, loop_stack.size(), (void*)target_loop);    
     for (int k = 0; k < (int)loop_stack.size(); k++)
-        fprintf(stderr, "  loop_stack[%d].loop_value_id=%d\n", k, loop_stack[k].loop_value_id);
+        // fprintf(stderr, "  loop_stack[%d].loop_value_id=%d\n", k, loop_stack[k].loop_value_id);
     if (!target_loop && !loop_stack.empty()) target_loop = &loop_stack.back();
     if (!target_loop) return;
 
@@ -500,8 +526,8 @@ void IRBridge::handleBr(BuildContext& bc, const Value& val) {
         if ((int)phi_val.operands.size() >= 2) {
             ir_ref phi_ref = bc.value_map[phi_id];
             ir_ref backedge_ref = bc.value_map[phi_val.operands[1]];
-            fprintf(stderr, "[BR] Adding back-edge value v%d for local_%d to phi v%d\n",
-                    phi_val.operands[1], phi_val.local_index, phi_id);
+        // fprintf(stderr, "[BR] Adding back-edge value v%d for local_%d to phi v%d\n",
+                    // phi_val.operands[1], phi_val.local_index, phi_id);
             ir_PHI_SET_OP(phi_ref, 2, backedge_ref);
         }
     }
@@ -510,16 +536,16 @@ void IRBridge::handleBr(BuildContext& bc, const Value& val) {
     if (loop_stack.size() >= 2) {
         LoopInfo& outer_loop = loop_stack[loop_stack.size() - 2];
         for (auto& [local_idx, outer_phi_ref] : outer_loop.outer_carry_phis) {
-            fprintf(stderr, "[OUTER_CARRY] Looking for local_%d in phi_ids (size=%zu)\n",
-                local_idx, target_loop->phi_ids.size());
+        // fprintf(stderr, "[OUTER_CARRY] Looking for local_%d in phi_ids (size=%zu)\n",
+                // local_idx, target_loop->phi_ids.size());
             // 找 inner loop 裡這個 local 的最新值
             for (int phi_id : target_loop->phi_ids) {
                 const Value& phi_val = bc.values[phi_id];
-                fprintf(stderr, "  phi_id=%d, local_index=%d\n", phi_id, phi_val.local_index);
+        // fprintf(stderr, "  phi_id=%d, local_index=%d\n", phi_id, phi_val.local_index);
                 if (phi_val.local_index == local_idx && (int)phi_val.operands.size() >= 2) {
                     ir_ref backedge_ref = bc.value_map[phi_val.operands[1]];
-                    fprintf(stderr, "[OUTER_CARRY] Setting outer PHI back-edge: local_%d, backedge=v%d\n",
-                        local_idx, phi_val.operands[1]);
+        // fprintf(stderr, "[OUTER_CARRY] Setting outer PHI back-edge: local_%d, backedge=v%d\n",
+                        // local_idx, phi_val.operands[1]);
                     ir_PHI_SET_OP(outer_phi_ref, 2, backedge_ref);
                     break;
                 }
@@ -527,9 +553,9 @@ void IRBridge::handleBr(BuildContext& bc, const Value& val) {
         }
     }
 
-    fprintf(stderr, "[BR] val.rhs=%d, found loop_begin=%d, loop_exit=%d\n", 
-        val.rhs, target_loop ? target_loop->loop_begin : -1,
-        target_loop ? target_loop->loop_exit : -1);
+        // fprintf(stderr, "[BR] val.rhs=%d, found loop_begin=%d, loop_exit=%d\n", 
+        // val.rhs, target_loop ? target_loop->loop_begin : -1,
+        // target_loop ? target_loop->loop_exit : -1);
 
     ir_ref loop_end_ref = ir_LOOP_END();
     ir_MERGE_SET_OP(target_loop->loop_begin, 2, loop_end_ref);
@@ -558,7 +584,7 @@ void IRBridge::handlePhi(BuildContext& bc, const Value& val) {
             // 切換到 outer loop 建 PHI
             ctx->control = outer_loop.loop_begin;
             ir_ref outer_phi = ir_PHI_2(IR_I32, ir_CONST_I32(0), IR_UNUSED);
-            fprintf(stderr, "[OUTER_PHI_BUILD] outer_phi=ref%d, ctx->control=%d\n", outer_phi, ctx->control);
+        // fprintf(stderr, "[OUTER_PHI_BUILD] outer_phi=ref%d, ctx->control=%d\n", outer_phi, ctx->control);
             // 用 COPY_HARD 包住 outer PHI，讓 optimizer 不折疊
             ir_ref hard_copy = ir_emit2(ctx, IR_OPT(IR_COPY, IR_I32), outer_phi, IR_COPY_HARD);
             outer_loop.outer_carry_phis[local_idx] = outer_phi;
@@ -568,7 +594,7 @@ void IRBridge::handlePhi(BuildContext& bc, const Value& val) {
 
         ir_ref inputs[2] = {entry_val, IR_UNUSED};
         ir_ref phi = ir_emit_N(ctx, IR_OPT(IR_PHI, IR_I32), 3);
-        fprintf(stderr, "[PHI_BUILD] v%zu: phi=ref%d, ctx->control=%d\n", i, phi, ctx->control);
+        // fprintf(stderr, "[PHI_BUILD] v%zu: phi=ref%d, ctx->control=%d\n", i, phi, ctx->control);
         ir_set_op(ctx, phi, 1, ctx->control);
         ir_set_op(ctx, phi, 2, entry_val);
         ir_set_op(ctx, phi, 3, IR_UNUSED);        bc.value_map[i] = phi;
@@ -779,6 +805,8 @@ static const std::unordered_map<Op, HandlerFn> kDispatchTable = {
     { Op::LocalGet,       &IRBridge::handleLocalGet },
     { Op::LocalSet,       &IRBridge::handleLocalSet },
     { Op::LocalTee,       &IRBridge::handleLocalTee },
+    { Op::GlobalGet,      &IRBridge::handleGlobalGet },
+    { Op::GlobalSet,      &IRBridge::handleGlobalSet },
     { Op::If,             &IRBridge::handleIf },
     { Op::Else,           &IRBridge::handleElse },
     { Op::End,            &IRBridge::handleEnd },
@@ -881,7 +909,12 @@ IRFunction* IRBridge::build(const ValueIR& values,
     std::unordered_map<int, ir_ref> local_vars;
     for (int idx : local_indices) {
         char name[32];
-        snprintf(name, sizeof(name), "local_%d", idx);
+        if (idx >= 2000) {
+            // wasm global variable
+            snprintf(name, sizeof(name), "wasm_global_%d", idx - 2000);
+        } else {
+            snprintf(name, sizeof(name), "local_%d", idx);
+        }
         ir_type t = local_types.count(idx) ? local_types[idx] : IR_I32;
         ir_ref var = ir_VAR(t, name);
         local_vars[idx] = var;
@@ -889,9 +922,21 @@ IRFunction* IRBridge::build(const ValueIR& values,
         if (it != param_index_to_value_id.end()) {
             ir_VSTORE(var, value_map[it->second]);
         } else {
-            // 非 param 的 local，初始化為 0
             ir_ref zero = ir_CONST_I32(0);
             ir_VSTORE(var, zero);
+        }
+    }
+
+    // 建 global_vars (wasm globals)
+    std::unordered_map<int, ir_ref> global_vars;
+    for (const auto& v : values) {
+        if ((v.op == Op::GlobalGet || v.op == Op::GlobalSet) && v.globalIndex >= 0) {
+            if (!global_vars.count(v.globalIndex)) {
+                char name[32];
+                snprintf(name, sizeof(name), "wasm_global_%d", v.globalIndex);
+                ir_ref var = ir_VAR(IR_I32, name);
+                global_vars[v.globalIndex] = var;
+            }
         }
     }
 
@@ -910,6 +955,7 @@ IRFunction* IRBridge::build(const ValueIR& values,
         BuildContext bc{
             ctx_, values, paramTypes,
             value_map, local_vars, local_types,
+            global_vars,
             mem_param, has_memory_ops, i
         };
 
@@ -927,10 +973,10 @@ IRFunction* IRBridge::build(const ValueIR& values,
 }
 
 void IRBridge::dump(IRFunction* fn) {
-    if (!fn || !fn->ctx) { fprintf(stderr, "Invalid IRFunction\n"); return; }
-    printf("\nIR Dump:\n");
+        // if (!fn || !fn->ctx) { fprintf(stderr, "Invalid IRFunction\n"); return; }
+        // printf("\nIR Dump:\n");
     ir_dump(fn->ctx, stdout);
-    printf("\n\nDOT Format:\n");
+        // printf("\n\nDOT Format:\n");
     ir_dump_dot(fn->ctx, "wasm_function", stdout);
 }
 

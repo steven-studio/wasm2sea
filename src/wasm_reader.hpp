@@ -15,3 +15,4 @@ struct FunctionResult {
 
 // 從 .wasm 檔案讀取指令
 std::vector<FunctionResult> readWasmFile(const std::string& filename);
+extern int g_wasm_global_count;

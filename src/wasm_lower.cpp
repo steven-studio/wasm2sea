@@ -27,6 +27,7 @@ struct LowerContext {
     ValueIR values;
     std::vector<int> stack;
     std::unordered_map<int, int> localVars;
+    std::unordered_map<int, int> globalVars;  // global index -> value id
     std::vector<ControlFrame> control_stack;
     const InstrSeq& code;
     const std::vector<std::string>& funcNames;
@@ -212,6 +213,23 @@ static void handle_LocalSet(LowerContext& ctx, const Instr& ins, size_t) {
     ctx.values[set_id].lhs = val;
 }
 
+static void handle_GlobalGet(LowerContext& ctx, const Instr& ins, size_t) {
+    int id = ctx.newValue(Op::GlobalGet);
+    ctx.values[id].globalIndex = ins.operand;
+    ctx.globalVars[ins.operand] = id;
+    ctx.stack.push_back(id);
+}
+
+static void handle_GlobalSet(LowerContext& ctx, const Instr& ins, size_t) {
+    if (ctx.stack.empty()) return;
+    int val = ctx.stack.back();
+    ctx.stack.pop_back();
+    ctx.globalVars[ins.operand] = val;
+    int set_id = ctx.newValue(Op::GlobalSet);
+    ctx.values[set_id].globalIndex = ins.operand;
+    ctx.values[set_id].lhs = val;
+}
+
 static void handle_LocalTee(LowerContext& ctx, const Instr& ins, size_t) {
     if (ctx.stack.empty()) return;
     ctx.localVars[ins.operand] = ctx.stack.back();
@@ -344,7 +362,7 @@ static LoopScanResult scanLoopBody(const InstrSeq& code, size_t loop_start) {
 
 static void handle_Loop(LowerContext& ctx, const Instr&, size_t idx) {
     int loop_id = ctx.newValue(Op::Loop);
-    fprintf(stderr, "[LOOP START] v%d = Loop\n", loop_id);
+        // fprintf(stderr, "[LOOP START] v%d = Loop\n", loop_id);
 
     ControlFrame frame;
     frame.type = ControlFrame::Loop;
@@ -362,11 +380,11 @@ static void handle_Loop(LowerContext& ctx, const Instr&, size_t idx) {
 
     auto scan = scanLoopBody(ctx.code, idx);
 
-    fprintf(stderr, "[LOOP v%d] set_before_inner = {", loop_id);
-    for (int i : scan.set_before_inner) fprintf(stderr, " %d", i);
-    fprintf(stderr, " }\n[LOOP v%d] modified_locals = {", loop_id);
-    for (int i : scan.modified_locals) fprintf(stderr, " %d", i);
-    fprintf(stderr, " }\n");
+        // fprintf(stderr, "[LOOP v%d] set_before_inner = {", loop_id);
+        // for (int i : scan.set_before_inner) fprintf(stderr, " %d", i);
+        // fprintf(stderr, " }\n[LOOP v%d] modified_locals = {", loop_id);
+        // for (int i : scan.modified_locals) fprintf(stderr, " %d", i);
+        // fprintf(stderr, " }\n");
 
     // 初始化未知 local
     for (int i : scan.modified_locals) {
@@ -398,9 +416,9 @@ static void handle_Loop(LowerContext& ctx, const Instr&, size_t idx) {
                 break;  // 只看最近一層，不繼續往外找
             }
         }
-        fprintf(stderr, "  [PHI CREATE] v%d = Phi(v%d) for local_%d%s\n",
-                phi_id, entry_val, i,
-                ctx.values[phi_id].use_vload_entry ? " [use_vload]" : "");
+        // fprintf(stderr, "  [PHI CREATE] v%d = Phi(v%d) for local_%d%s\n",
+                // phi_id, entry_val, i,
+                // ctx.values[phi_id].use_vload_entry ? " [use_vload]" : "");
         frame.loop_phis[i] = phi_id;
         ctx.localVars[i] = phi_id;
     }
@@ -460,8 +478,8 @@ static void handle_Br(LowerContext& ctx, const Instr& ins, size_t) {
     if (depth >= (int)ctx.control_stack.size()) return;
     ControlFrame& target = ctx.control_stack[ctx.control_stack.size() - 1 - depth];
 
-    fprintf(stderr, "[BR_DEBUG] depth=%d, target.type=%d, loop_phis size=%zu\n",
-            depth, target.type, target.loop_phis.size());
+        // fprintf(stderr, "[BR_DEBUG] depth=%d, target.type=%d, loop_phis size=%zu\n",
+            // depth, target.type, target.loop_phis.size());
 
     if (target.type == ControlFrame::Loop) {
         ctx.updateLoopPhiBackedges(target);
@@ -642,6 +660,8 @@ static const std::unordered_map<WasmOp, HandlerFn> kDispatch = {
     { WasmOp::I32Const,      handle_I32Const },
     { WasmOp::I64Const,      handle_I64Const },
     { WasmOp::F64Const,      handle_F64Const },
+    { WasmOp::GlobalGet,     handle_GlobalGet },
+    { WasmOp::GlobalSet,     handle_GlobalSet },
     { WasmOp::LocalGet,      handle_LocalGet },
     { WasmOp::LocalSet,      handle_LocalSet },
     { WasmOp::LocalTee,      handle_LocalTee },
@@ -675,14 +695,14 @@ static const std::unordered_map<WasmOp, HandlerFn> kDispatch = {
 // ============================================================
 
 static ValueIR cleanupValueIR(ValueIR& values) {
-    fprintf(stderr, "\n=== Cleanup Phase ===\n");
+        // fprintf(stderr, "\n=== Cleanup Phase ===\n");
 
     // Step 1: 找退化 PHI
     std::unordered_map<int, int> replacements;
     for (size_t i = 0; i < values.size(); i++) {
         if (values[i].op == Op::Phi && values[i].operands.size() == 1) {
             replacements[i] = values[i].operands[0];
-            fprintf(stderr, "[DEGENERATE] v%d = Phi(v%d)\n", (int)i, values[i].operands[0]);
+        // fprintf(stderr, "[DEGENERATE] v%d = Phi(v%d)\n", (int)i, values[i].operands[0]);
         }
     }
 
@@ -706,6 +726,7 @@ static ValueIR cleanupValueIR(ValueIR& values) {
             case Op::Return: case Op::Store: case Op::F64Store:
             case Op::Loop: case Op::If: case Op::Else: case Op::End:
             case Op::Br_if: case Op::Br: case Op::LocalSet: case Op::LocalGet:
+            case Op::GlobalGet: case Op::GlobalSet:
                 used[i] = true; break;
             default: break;
         }
@@ -769,7 +790,7 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
         ctx.numParams = static_cast<size_t>(code[0].operand);
         start_idx = 1;
     }
-    fprintf(stderr, "=== SSA Lowering ===\nnumParams = %zu\n\n", ctx.numParams);
+        // fprintf(stderr, "=== SSA Lowering ===\nnumParams = %zu\n\n", ctx.numParams);
 
     for (size_t i = start_idx; i < code.size(); i++) {
         const Instr& ins = code[i];

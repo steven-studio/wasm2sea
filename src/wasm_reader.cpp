@@ -157,5 +157,7 @@ std::vector<FunctionResult> readWasmFile(const std::string& filename) {
     
     printf("Successfully converted %zu functions\n", results.size());
     
+    g_wasm_global_count = (int)module.globals.size();
     return results;
 }
+int g_wasm_global_count = 0;

@@ -40,6 +40,8 @@ enum class Op {
     LocalGet,    // 读取局部变量
     LocalSet,    // 设置局部变量（不返回值）
     LocalTee,    // 设置局部变量并返回值
+    GlobalGet,   // 读取 wasm global
+    GlobalSet,   // 写入 wasm global
 
     Select,   // 新增：三元运算符
 
@@ -95,6 +97,7 @@ struct Value {
     std::vector<int> operands;
     
     int local_index = -1;  // ✅ 初始化为 -1 表示"未设置"
+    int globalIndex = -1; // for GlobalGet/GlobalSet
     bool use_vload_entry = false;  // inner-only PHI 需要從 VAR VLOAD 初始值
     std::string callee_name;  // ← 加這行
 
@@ -140,6 +143,8 @@ inline std::string opToString(Op op) {  // 改：Op → ValueOp
     case Op::LocalGet: return "LocalGet";
     case Op::LocalSet: return "LocalSet";
     case Op::LocalTee: return "LocalTee";
+    case Op::GlobalGet: return "GlobalGet";
+    case Op::GlobalSet: return "GlobalSet";
     case Op::Select:   return "Select";
     case Op::If:   return "If";
     case Op::Else: return "Else";
