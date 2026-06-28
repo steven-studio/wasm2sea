@@ -466,8 +466,12 @@ static void handle_Br_if(LowerContext& ctx, const Instr& ins, size_t) {
                 break;
             }
         }
+        // WASM: cond true = break; dstogov/ir: IF_TRUE = continue loop
+        // Negate condition so IF_TRUE = continue, IF_FALSE = exit
+        int neg_id = ctx.newValue(Op::Eqz);
+        ctx.values[neg_id].lhs = cond;
         int id = ctx.newValue(Op::Br_if);
-        ctx.values[id].lhs = cond;
+        ctx.values[id].lhs = neg_id;
         ctx.values[id].rhs = outer_loop_start_id;
         ctx.values[id].constValue = 1;
     }
@@ -807,6 +811,10 @@ ValueIR lowerWasmToSsa(const InstrSeq& code,
         int v = ctx.stack.back();
         int id = ctx.newValue(Op::Return);
         ctx.values[id].lhs = v;
+    } else {
+        // void function: still need a Return node for CFG
+        int id = ctx.newValue(Op::Return);
+        ctx.values[id].lhs = -1;
     }
 
     return cleanupValueIR(ctx.values);

@@ -111,7 +111,7 @@ int main(int argc, char* argv[]) {
             funcNames.push_back(f.name);
 
         ValueIR values = lowerWasmToSsa(code, funcNames);
-        // dumpValueIR(values);
+        dumpValueIR(values);
 
         // Step 2: ValueIR → dstogov/ir
         std::cout << "\nStep 2: Building dstogov/ir Graph\n";
@@ -124,6 +124,7 @@ int main(int argc, char* argv[]) {
 
         // 保存每个函数的 IR
         ir_save(bridge.getCtx(), 0, irFile);
+        fflush(irFile);
         std::cout << "Appended IR to: " << irPath << "\n";
 
         // 輸出 C code: run minimal passes then emit C

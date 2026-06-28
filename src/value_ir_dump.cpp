@@ -78,7 +78,7 @@ void dumpValueIR(const ValueIR& values) {
         case Op::Br_if:
             std::cout << "(cond: v" << v.lhs 
                     << ", target: v" << v.rhs;
-            if (v.rhs >= 0)
+            if (v.constValue == 0)
                 std::cout << ", kind: loop_back)";
             else
                 std::cout << ", kind: block_exit)";
@@ -107,5 +107,6 @@ void dumpValueIR(const ValueIR& values) {
         }
 
         std::cout << "\n";
+        std::cout.flush();
     }
 }

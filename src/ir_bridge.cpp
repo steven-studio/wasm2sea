@@ -472,11 +472,14 @@ void IRBridge::handleBrIf(BuildContext& bc, const Value& val) {
     
     // 找對應的 loop（用 phi_ids 對 val.rhs）
     if (val.constValue == 1) {
-        // br_if depth=1: break block / exit loop
-        ir_IF_TRUE(if_node);
+        // WASM: cond true = break
+        // dstogov/ir: IF_FALSE = exit, IF_TRUE = loop body continues
+        ir_IF_FALSE(if_node);
         ir_ref exit_end = ir_END();
         loop_stack.back().exits.push_back(exit_end);
-        ir_IF_FALSE(if_node);
+        ir_IF_TRUE(if_node);
+        ir_ref body_end = ir_END();
+        ir_BEGIN(body_end);
         return;
     }
 
@@ -559,10 +562,9 @@ void IRBridge::handleBr(BuildContext& bc, const Value& val) {
 
     ir_ref loop_end_ref = ir_LOOP_END();
     ir_MERGE_SET_OP(target_loop->loop_begin, 2, loop_end_ref);
+    fprintf(stderr, "[BR] exits.size=%zu\n", target_loop->exits.size());
     if (!target_loop->exits.empty()) {
-        ir_BEGIN(target_loop->exits[0]);
-        ir_ref end_exit = ir_END();
-        ir_MERGE_2(loop_end_ref, end_exit);
+        ir_MERGE_2(loop_end_ref, target_loop->exits[0]);
     }
     loop_stack.pop_back();
     TRACE("  v%zu = Br -> LOOP_END\n\n", i);
@@ -611,10 +613,15 @@ void IRBridge::handlePhi(BuildContext& bc, const Value& val) {
 void IRBridge::handleReturn(BuildContext& bc, const Value& val) {
     ir_ctx* ctx = bc.ctx;
     size_t i = bc.current_index;
-    if (val.lhs < 0 || val.lhs >= (int)i) return;
-    ir_ref ret_val = bc.value_map[val.lhs];
-    TRACE("  v%zu = Return(v%d) -> ir_RETURN(ref %d)\n\n", i, val.lhs, ret_val);
-    ir_RETURN(ret_val);
+    if (val.lhs < 0 || val.lhs >= (int)i) {
+        // void return
+        ctx_->ret_type = IR_VOID;
+        ir_RETURN(IR_UNUSED);
+    } else {
+        ir_ref ret_val = bc.value_map[val.lhs];
+        TRACE("  v%zu = Return(v%d) -> ir_RETURN(ref %d)\n\n", i, val.lhs, ret_val);
+        ir_RETURN(ret_val);
+    }
     if (!if_stack.empty() && !if_stack.top().has_else)
         if_stack.top().true_branch_returns = true;
 }
@@ -850,7 +857,7 @@ IRFunction* IRBridge::build(const ValueIR& values,
     while (!if_stack.empty()) if_stack.pop();
     while (!loop_stack.empty()) loop_stack.pop_back();
     ir_init(ctx_, IR_FUNCTION, 128, 128);
-    ctx_->ret_type = IR_I32;
+    ctx_->ret_type = IR_I32;  // will be overridden for void functions
 
     ir_START();
     ir_ref start = ctx_->ir_base[1].op2;
