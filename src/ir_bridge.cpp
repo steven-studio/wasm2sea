@@ -662,13 +662,22 @@ void IRBridge::handleSelect(BuildContext& bc, const Value& val) {
 
 // ----- Memory -----
 
+static ir_ref makeMemAddr(BuildContext& bc, ir_ref ptr_ref, int mem_offset) {
+    ir_ctx* ctx = bc.ctx;   // 關鍵：ir_builder macro 需要這個名字
+    ir_ref offset_ref = ptr_ref;
+    if (mem_offset != 0) {
+        offset_ref = ir_ADD_I32(ptr_ref, ir_CONST_I32(mem_offset));
+    }
+    return ir_ADD_A(bc.mem_param, offset_ref);
+}
+
 void IRBridge::handleLoad(BuildContext& bc, const Value& val) {
     ir_ctx* ctx = bc.ctx;
     size_t i = bc.current_index;
     if (val.lhs < 0 || val.lhs >= (int)i) return;
     ir_ref ptr_ref = bc.value_map[val.lhs];
     if (ptr_ref == IR_UNUSED) return;
-    ir_ref real_ptr = ir_ADD_A(bc.mem_param, ptr_ref);
+    ir_ref real_ptr = makeMemAddr(bc, ptr_ref, val.mem_offset);
     bc.value_map[i] = (val.type == ValueType::I64) ? ir_LOAD_I64(real_ptr) : ir_LOAD_I32(real_ptr);
 }
 
@@ -678,7 +687,8 @@ void IRBridge::handleStore(BuildContext& bc, const Value& val) {
     if (val.lhs < 0 || val.lhs >= (int)i || val.rhs < 0 || val.rhs >= (int)i) return;
     ir_ref ptr_ref = bc.value_map[val.lhs], val_ref = bc.value_map[val.rhs];
     if (ptr_ref == IR_UNUSED || val_ref == IR_UNUSED) return;
-    ir_STORE(ir_ADD_A(bc.mem_param, ptr_ref), val_ref);
+    ir_ref real_ptr = makeMemAddr(bc, ptr_ref, val.mem_offset);
+    ir_STORE(real_ptr, val_ref);
 }
 
 void IRBridge::handleF64Load(BuildContext& bc, const Value& val) {
@@ -687,7 +697,7 @@ void IRBridge::handleF64Load(BuildContext& bc, const Value& val) {
     if (val.lhs < 0 || val.lhs >= (int)i) return;
     ir_ref ptr_ref = bc.value_map[val.lhs];
     if (ptr_ref == IR_UNUSED) return;
-    ir_ref real_ptr = ir_ADD_A(bc.mem_param, ptr_ref);
+    ir_ref real_ptr = makeMemAddr(bc, ptr_ref, val.mem_offset);
     bc.value_map[i] = ir_LOAD_D(real_ptr);
 }
 
@@ -696,7 +706,7 @@ void IRBridge::handleF64Store(BuildContext& bc, const Value& val) {
     if (val.lhs < 0 || val.rhs < 0) return;
     ir_ref ptr_ref = bc.value_map[val.lhs], val_ref = bc.value_map[val.rhs];
     if (ptr_ref == IR_UNUSED || val_ref == IR_UNUSED) return;
-    ir_ref real_ptr = ir_ADD_A(bc.mem_param, ptr_ref);
+    ir_ref real_ptr = makeMemAddr(bc, ptr_ref, val.mem_offset);
     ir_STORE(real_ptr, val_ref);
 }
 

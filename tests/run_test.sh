@@ -50,6 +50,16 @@ elif [[ "$TEST" == f64_convert_i64_* ]]; then
 elif [[ "$TEST" == matmul* ]]; then
     cc -O2 -include stdint.h -include stdbool.h out.c ../../tests/run_varargs_ffi_matmul.c -o a.out \
        $(pkg-config --cflags --libs libffi) -lm -ldl -lpthread 2>/dev/null
+elif [[ "$TEST" == jacobi1d_kernel ]]; then
+    ./ir ../../build/${TEST}.ir --emit-c out.c 2>/dev/null
+
+    sed -i '1s/^/int32_t local_12, local_22, local_32, local_38, local_39, local_47, local_48, local_49, local_50, local_66, local_76, local_82, local_83, local_91, local_92, local_93, local_94;\n/' out.c
+    
+    cp ../../tests/jacobi_harness.c /tmp/jacobi_harness_test.c
+    sed -i 's/\bkernel_jacobi_1d\b/test/g' /tmp/jacobi_harness_test.c
+    
+    cc -O2 -include stdint.h -include stdbool.h -include math.h \
+       out.c /tmp/jacobi_harness_test.c -o a.out -lm
 elif [[ "$TEST" == bubble_sort* ]] || [[ "$TEST" == *sort* ]]; then
     cc -O2 -include stdint.h -include stdbool.h out.c ../../tests/run_varargs_ffi_sort.c -o a.out \
        $(pkg-config --cflags --libs libffi) -lm -ldl -lpthread 2>/dev/null
