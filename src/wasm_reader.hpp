@@ -2,6 +2,7 @@
 #include "wasm_instr.hpp"
 #include <vector>
 #include <string>
+#include <unordered_map>
 
 enum class ParamType { I32, I64, F64, Other };  // ← 確保在最上面
 
@@ -11,6 +12,7 @@ struct FunctionResult {
     size_t numParams;        // 参数数量
     InstrSeq instructions;   // 指令序列
     std::vector<ParamType> paramTypes;  // 参数类型列表（可选）
+    std::unordered_map<int, int32_t> globalInitValues;  // ← 新增
 };
 
 // 從 .wasm 檔案讀取指令

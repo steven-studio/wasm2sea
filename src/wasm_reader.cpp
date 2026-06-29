@@ -157,6 +157,21 @@ std::vector<FunctionResult> readWasmFile(const std::string& filename) {
     
     printf("Successfully converted %zu functions\n", results.size());
     
+    // 讀取 global 初始值
+    std::unordered_map<int, int32_t> globalInits;
+    for (int gi = 0; gi < (int)module.globals.size(); gi++) {
+        auto* g = module.globals[gi].get();
+        if (g->init) {
+            if (auto* c = g->init->dynCast<wasm::Const>()) {
+                if (c->value.type == wasm::Type::i32) {
+                    globalInits[gi] = c->value.geti32();
+                }
+            }
+        }
+    }
+    for (auto& r : results)
+        r.globalInitValues = globalInits;
+
     g_wasm_global_count = (int)module.globals.size();
     return results;
 }

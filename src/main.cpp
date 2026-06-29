@@ -118,7 +118,7 @@ int main(int argc, char* argv[]) {
         std::cout << "==================================\n";
 
         IRBridge bridge;
-        IRFunction* fn = bridge.build(values, func.paramTypes);
+        IRFunction* fn = bridge.build(values, func.paramTypes, func.globalInitValues);
         
         // bridge.dump(fn);  // disabled for benchmark mode
 

@@ -2,6 +2,7 @@
 #include "value_ir.hpp"
 #include "wasm_reader.hpp"
 #include <vector>
+#include <unordered_map>
 
 // Forward declarations for dstogov/ir types
 typedef struct _ir_ctx ir_ctx;
@@ -22,7 +23,7 @@ public:
     // 將 ValueIR 轉成 dstogov/ir 的 IRFunction
     IRFunction* build(const ValueIR& values, 
                     const std::vector<ParamType>& paramTypes = {},
-                    void* memory_base = nullptr);
+                    const std::unordered_map<int, int32_t>& globalInitValues = {});
     
     // 印出 IR graph
     void dump(IRFunction* fn);

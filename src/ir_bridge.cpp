@@ -869,7 +869,7 @@ static const std::unordered_map<Op, HandlerFn> kDispatchTable = {
 
 IRFunction* IRBridge::build(const ValueIR& values,
                              const std::vector<ParamType>& paramTypes,
-                             void* memory_base) {
+                             const std::unordered_map<int, int32_t>& globalInitValues) {
     ir_ctx* ctx = ctx_;
 
     TRACE("--- paramTypes ---\n");
@@ -984,6 +984,9 @@ IRFunction* IRBridge::build(const ValueIR& values,
                 snprintf(name, sizeof(name), "wasm_global_%d", v.globalIndex);
                 ir_ref var = ir_VAR(IR_I32, name);
                 global_vars[v.globalIndex] = var;
+                ir_VSTORE(var, ir_CONST_I32(
+                    globalInitValues.count(v.globalIndex)
+                    ? globalInitValues.at(v.globalIndex) : 0));
             }
         }
     }
