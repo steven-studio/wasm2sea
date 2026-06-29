@@ -94,6 +94,9 @@ struct Value {
     int lhs = -1;         // 對 binary op / Return 使用
     int rhs = -1;         // for binary op
 
+    int mem_offset = 0;
+    int mem_align = 0;
+
     // 為了向後兼容，可以加 operands 陣列
     std::vector<int> operands;
     
@@ -175,6 +178,7 @@ inline std::string opToString(Op op) {  // 改：Op → ValueOp
     case Op::I32TruncF64U:  return "I32TruncF64U";
     case Op::I64TruncF64S:  return "I64TruncF64S";
     case Op::I64TruncF64U:  return "I64TruncF64U";
+    case Op::F64Const:      return "F64Const";
     case Op::F64Add:        return "F64Add";
     case Op::F64Sub:        return "F64Sub";
     case Op::F64Mul:        return "F64Mul";

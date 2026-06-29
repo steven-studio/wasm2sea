@@ -90,16 +90,24 @@ void dumpValueIR(const ValueIR& values) {
                 std::cout << "(kind: block/if_exit)";
             break;
         case Op::Load:
-            std::cout << "(ptr=v" << v.lhs << ")";
+            std::cout << "(ptr=v" << v.lhs << ", offset=" << v.mem_offset << ")";
             break;
         case Op::Store:
-            std::cout << "(ptr=v" << v.lhs << ", val=v" << v.rhs << ")";
+            std::cout << "(ptr=v" << v.lhs
+            << ", val=v" << v.rhs
+            << ", offset=" << v.mem_offset << ")";
+            break;
+        case Op::F64Const:
+            std::cout << "(" << v.fconst << ")";
             break;
         case Op::F64Load:
-            std::cout << "(ptr=v" << v.lhs << ")";
+            std::cout << "(ptr=v" << v.lhs
+            << ", offset=" << v.mem_offset << ")";
             break;
         case Op::F64Store:
-            std::cout << "(ptr=v" << v.lhs << ", val=v" << v.rhs << ")";
+            std::cout << "(ptr=v" << v.lhs
+            << ", val=v" << v.rhs
+            << ", offset=" << v.mem_offset << ")";
             break;
         case Op::Return:
             std::cout << "(v" << v.lhs << ")";

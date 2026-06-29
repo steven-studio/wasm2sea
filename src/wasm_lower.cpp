@@ -177,6 +177,7 @@ static void handle_I64Const(LowerContext& ctx, const Instr& ins, size_t) {
 
 static void handle_F64Const(LowerContext& ctx, const Instr& ins, size_t) {
     int id = ctx.newValue(Op::F64Const);
+    ctx.values[id].type = ValueType::F64;
     ctx.values[id].fconst = ins.foperand;
     ctx.stack.push_back(id);
 }
@@ -573,19 +574,22 @@ static void handle_MemoryFill(LowerContext& ctx, const Instr&, size_t) {
 }
 
 static void handle_Load(LowerContext& ctx, const Instr& ins, size_t) {
-    Op op = (ins.op == WasmOp::I64Load) ? Op::Load : Op::Load;
+    Op op = Op::Load;
     ValueType t = (ins.op == WasmOp::I64Load) ? ValueType::I64 : ValueType::I32;
     int ptr = ctx.safePop();
     int id = ctx.newValue(op);
     ctx.values[id].lhs = ptr;
     ctx.values[id].type = t;
+    ctx.values[id].mem_offset = ins.operand;
     ctx.stack.push_back(id);
 }
 
-static void handle_F64Load(LowerContext& ctx, const Instr&, size_t) {
+static void handle_F64Load(LowerContext& ctx, const Instr& ins, size_t) {
     int ptr = ctx.safePop();
     int id = ctx.newValue(Op::F64Load);
     ctx.values[id].lhs = ptr;
+    ctx.values[id].type = ValueType::F64;
+    ctx.values[id].mem_offset = ins.operand;
     ctx.stack.push_back(id);
 }
 
@@ -596,13 +600,15 @@ static void handle_Store(LowerContext& ctx, const Instr& ins, size_t) {
     ctx.values[id].lhs = ptr;
     ctx.values[id].rhs = val;
     ctx.values[id].type = t;
+    ctx.values[id].mem_offset = ins.operand;
 }
 
-static void handle_F64Store(LowerContext& ctx, const Instr&, size_t) {
+static void handle_F64Store(LowerContext& ctx, const Instr& ins, size_t) {
     int val = ctx.safePop(), ptr = ctx.safePop();
     int id = ctx.newValue(Op::F64Store);
     ctx.values[id].lhs = ptr;
     ctx.values[id].rhs = val;
+    ctx.values[id].mem_offset = ins.operand;
 }
 
 static void handle_Unsupported(LowerContext& ctx, const Instr&, size_t) {
