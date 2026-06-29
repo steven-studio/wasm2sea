@@ -936,9 +936,10 @@ IRFunction* IRBridge::build(const ValueIR& values,
     }
     std::unordered_map<int, ir_type> local_types;
     for (int idx : local_indices)
-        local_types[idx] = (idx < (int)paramTypes.size() && paramTypes[idx] == ParamType::I64)
-                           ? IR_I64 : IR_I32;
-
+        local_types[idx] = (idx < (int)paramTypes.size() && paramTypes[idx] == ParamType::I64) ? IR_I64 :
+                        (idx < (int)paramTypes.size() && paramTypes[idx] == ParamType::F64) ? IR_DOUBLE :
+                        IR_I32;
+                        
     // 先掃描哪些 local_idx 有被讀取
     std::unordered_set<int> read_locals;
     for (const auto& v : values) {
@@ -950,29 +951,27 @@ IRFunction* IRBridge::build(const ValueIR& values,
     // 建 local_vars
     std::unordered_map<int, ir_ref> local_vars;
     for (int idx : local_indices) {
-        for (int idx : local_indices) {
-            // param 一定要建（有被 VSTORE 初始化）
-            bool is_param = param_index_to_value_id.count(idx) > 0;
-            bool is_read  = read_locals.count(idx) > 0;
-            if (!is_param && !is_read) continue;  // 純 write-only local，跳過
+        // param 一定要建（有被 VSTORE 初始化）
+        bool is_param = param_index_to_value_id.count(idx) > 0;
+        bool is_read  = read_locals.count(idx) > 0;
+        if (!is_param && !is_read) continue;  // 純 write-only local，跳過
 
-            char name[32];
-            if (idx >= 2000) {
-                // wasm global variable
-                snprintf(name, sizeof(name), "wasm_global_%d", idx - 2000);
-            } else {
-                snprintf(name, sizeof(name), "local_%d", idx);
-            }
-            ir_type t = local_types.count(idx) ? local_types[idx] : IR_I32;
-            ir_ref var = ir_VAR(t, name);
-            local_vars[idx] = var;
-            auto it = param_index_to_value_id.find(idx);
-            if (it != param_index_to_value_id.end()) {
-                ir_VSTORE(var, value_map[it->second]);
-            } else {
-                ir_ref zero = ir_CONST_I32(0);
-                ir_VSTORE(var, zero);
-            }
+        char name[32];
+        if (idx >= 2000) {
+            // wasm global variable
+            snprintf(name, sizeof(name), "wasm_global_%d", idx - 2000);
+        } else {
+            snprintf(name, sizeof(name), "local_%d", idx);
+        }
+        ir_type t = local_types.count(idx) ? local_types[idx] : IR_I32;
+        ir_ref var = ir_VAR(t, name);
+        local_vars[idx] = var;
+        auto it = param_index_to_value_id.find(idx);
+        if (it != param_index_to_value_id.end()) {
+            ir_VSTORE(var, value_map[it->second]);
+        } else {
+            ir_ref zero = ir_CONST_I32(0);
+            ir_VSTORE(var, zero);
         }
     }
 
