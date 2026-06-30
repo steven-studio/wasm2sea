@@ -7,16 +7,30 @@ IR_BIN=$HOME/wasm2sea/third_party/dstogov-ir/ir
 KERNELS_DIR=$HOME/wasm2sea/benchmarks/polybench/kernels
 
 BENCHMARKS=(
-  "stencils/jacobi-1d jacobi-1d kernel_jacobi_1d"
+  "jacobi-1d kernel_jacobi_1d"
+  "jacobi-2d kernel_jacobi_2d"
+  "gemm kernel_gemm"
+  "seidel-2d kernel_seidel_2d"
+  "heat-3d kernel_heat_3d"
+  "atax kernel_atax"
+  "bicg kernel_bicg"
+  "mvt kernel_mvt"
+  "gemver kernel_gemver"
+  "gesummv kernel_gesummv"
+  "2mm kernel_2mm"
+  "3mm kernel_3mm"
+  "trmm kernel_trmm"
+  "syrk kernel_syrk"
+  "syr2k kernel_syr2k"
+  "symm kernel_symm"
 )
 
 PASS=0
 FAIL=0
 
 for entry in "${BENCHMARKS[@]}"; do
-  SUBDIR=$(echo $entry | cut -d' ' -f1)
-  NAME=$(echo $entry | cut -d' ' -f2)
-  KERNEL=$(echo $entry | cut -d' ' -f3)
+  NAME=$(echo $entry | cut -d' ' -f1)
+  KERNEL=$(echo $entry | cut -d' ' -f2)
 
   echo "=== $NAME ==="
 
@@ -53,16 +67,10 @@ for entry in "${BENCHMARKS[@]}"; do
 
   # Step 4: compile & run vs reference
   OUTC=/tmp/${NAME}_out.c
+  HARNESS=$HOME/wasm2sea/tests/${NAME//-/_}_harness.c
 
-  # 自動偵測並補上 local_* 宣告
-  UNDECL=$(grep -oP '\blocal_\d+\b' $OUTC | sort -u | tr '\n' ',' | sed 's/,$//')
-  if [ -n "$UNDECL" ]; then
-    sed -i "1s/^/int32_t ${UNDECL};\n/" $OUTC
-  fi
-
-  # 把 harness 的函數名換掉
-  cp $HOME/wasm2sea/tests/jacobi_harness.c /tmp/${NAME}_harness.c
-  sed -i 's/\bkernel_jacobi_1d\b/test/g' /tmp/${NAME}_harness.c
+  cp $HARNESS /tmp/${NAME}_harness.c
+  sed -i "s/\b${KERNEL}\b/test/g" /tmp/${NAME}_harness.c
 
   cc -O2 -include stdint.h -include stdbool.h -include math.h \
     $OUTC /tmp/${NAME}_harness.c -o /tmp/${NAME}_bin -lm
@@ -72,7 +80,7 @@ for entry in "${BENCHMARKS[@]}"; do
   fi
 
   RESULT=$(/tmp/${NAME}_bin)
-  if echo "$RESULT" | grep -q "PASS jacobi1d differential test"; then
+  if echo "$RESULT" | grep -q "PASS"; then
     echo "  [4/4] run OK"
     echo "PASS: $NAME"
     PASS=$((PASS+1))
