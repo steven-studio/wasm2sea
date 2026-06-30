@@ -24,6 +24,8 @@ BENCHMARKS=(
   "syr2k kernel_syr2k"
   "symm kernel_symm"
   "trisolv kernel_trisolv"
+  "durbin kernel_durbin"
+  "lu kernel_lu"
 )
 
 PASS=0
