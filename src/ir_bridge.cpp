@@ -285,6 +285,13 @@ void IRBridge::handleF64Neg(BuildContext& bc, const Value& val) {
     bc.value_map[bc.current_index] = ir_NEG_D(bc.value_map[val.lhs]);
 }
 
+void IRBridge::handleF64Sqrt(BuildContext& bc, const Value& val) {
+    ir_ctx* ctx = bc.ctx;
+    ir_ref name_ref = ir_str(ctx, "sqrt");
+    ir_ref func_ref = ir_const_func(ctx, name_ref, IR_UNUSED);
+    bc.value_map[bc.current_index] = ir_CALL_1(IR_DOUBLE, func_ref, bc.value_map[val.lhs]);
+}
+
 void IRBridge::handleF64ConvertI(BuildContext& bc, const Value& val) {
     ir_ctx* ctx = bc.ctx;
     bc.value_map[bc.current_index] = ir_INT2D(bc.value_map[val.lhs]);
@@ -831,6 +838,7 @@ static const std::unordered_map<Op, HandlerFn> kDispatchTable = {
     { Op::I64ExtendI32S,  &IRBridge::handleI64ExtendI32S },
     { Op::I64ExtendI32U,  &IRBridge::handleI64ExtendI32U },
     { Op::F64Neg, &IRBridge::handleF64Neg },
+    { Op::F64Sqrt, &IRBridge::handleF64Sqrt },
     { Op::F64ConvertI32S, &IRBridge::handleF64ConvertI },
     { Op::F64ConvertI64S, &IRBridge::handleF64ConvertI },
     { Op::F64ConvertI32U, &IRBridge::handleF64ConvertI },

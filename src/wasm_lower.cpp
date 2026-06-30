@@ -158,6 +158,7 @@ MAKE_UNARY(I32TruncF64U, I32TruncF64U, I32)
 MAKE_UNARY(I64TruncF64S, I64TruncF64S, I64)
 MAKE_UNARY(I64TruncF64U, I64TruncF64U, I64)
 MAKE_UNARY(F64Neg, F64Neg, F64)
+MAKE_UNARY(F64Sqrt, F64Sqrt, F64)
 
 // ============================================================
 // 常數
@@ -661,6 +662,7 @@ static const std::unordered_map<WasmOp, HandlerFn> kDispatch = {
     { WasmOp::F64Mul,        handle_F64Mul },
     { WasmOp::F64Div,        handle_F64Div },
     { WasmOp::F64Neg,         handle_F64Neg },
+    { WasmOp::F64Sqrt,        handle_F64Sqrt },
     { WasmOp::F64ConvertI32S,handle_F64ConvertI32S },
     { WasmOp::F64ConvertI32U,handle_F64ConvertI32U },
     { WasmOp::F64ConvertI64S,handle_F64ConvertI64S },

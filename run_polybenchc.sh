@@ -26,6 +26,8 @@ BENCHMARKS=(
   "trisolv kernel_trisolv"
   "durbin kernel_durbin"
   "lu kernel_lu"
+  "covariance kernel_covariance"
+  "correlation kernel_correlation"
 )
 
 PASS=0

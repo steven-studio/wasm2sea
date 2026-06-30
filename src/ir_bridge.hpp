@@ -64,6 +64,7 @@ public:
     void handleI64ExtendI32U(BuildContext& bc, const Value& val);
     void handleF64ConvertI(BuildContext& bc, const Value& val);
     void handleF64Neg(BuildContext& bc, const Value& val);
+    void handleF64Sqrt(BuildContext& bc, const Value& val);
     void handleI32TruncF64(BuildContext& bc, const Value& val);
     void handleI64TruncF64(BuildContext& bc, const Value& val);
     void handleI32Const(BuildContext& bc, const Value& val);
