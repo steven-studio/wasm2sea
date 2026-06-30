@@ -280,6 +280,11 @@ void IRBridge::handleI64ExtendI32U(BuildContext& bc, const Value& val) {
     bc.value_map[bc.current_index] = ir_ZEXT_I64(bc.value_map[val.lhs]);
 }
 
+void IRBridge::handleF64Neg(BuildContext& bc, const Value& val) {
+    ir_ctx* ctx = bc.ctx;
+    bc.value_map[bc.current_index] = ir_NEG_D(bc.value_map[val.lhs]);
+}
+
 void IRBridge::handleF64ConvertI(BuildContext& bc, const Value& val) {
     ir_ctx* ctx = bc.ctx;
     bc.value_map[bc.current_index] = ir_INT2D(bc.value_map[val.lhs]);
@@ -825,6 +830,7 @@ static const std::unordered_map<Op, HandlerFn> kDispatchTable = {
     { Op::I32WrapI64,     &IRBridge::handleI32WrapI64 },
     { Op::I64ExtendI32S,  &IRBridge::handleI64ExtendI32S },
     { Op::I64ExtendI32U,  &IRBridge::handleI64ExtendI32U },
+    { Op::F64Neg, &IRBridge::handleF64Neg },
     { Op::F64ConvertI32S, &IRBridge::handleF64ConvertI },
     { Op::F64ConvertI64S, &IRBridge::handleF64ConvertI },
     { Op::F64ConvertI32U, &IRBridge::handleF64ConvertI },

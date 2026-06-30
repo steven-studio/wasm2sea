@@ -23,6 +23,7 @@ BENCHMARKS=(
   "syrk kernel_syrk"
   "syr2k kernel_syr2k"
   "symm kernel_symm"
+  "trisolv kernel_trisolv"
 )
 
 PASS=0
