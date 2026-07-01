@@ -31,6 +31,7 @@ BENCHMARKS=(
   "fdtd-2d kernel_fdtd_2d"
   "adi kernel_adi"
   "ludcmp kernel_ludcmp"
+  "cholesky kernel_cholesky"
 )
 
 PASS=0
