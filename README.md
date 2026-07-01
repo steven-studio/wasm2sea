@@ -164,7 +164,7 @@ See [PROGRESS.md](PROGRESS.md) for detailed status and [TODO.md](TODO.md) for ro
 
 ## License
 
-[Add your license here]
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## References
 
