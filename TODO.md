@@ -1,87 +1,128 @@
 # Wasm2Sea TODO List
 
+## Verified ✓✓ (Differential Testing)
+
+### PolyBenchC — 21/21 kernels passing
+Stencils: jacobi-1d, jacobi-2d, seidel-2d, heat-3d
+Linear Algebra: gemm, 2mm, 3mm, atax, bicg, gemver, gesummv, symm, syrk, syr2k, trmm, mvt
+Solvers: trisolv, durbin, lu
+Datamining: covariance, correlation
+
+All verified against reference C implementations using `run_polybenchc.sh`.
+
+## Completed ✓
+
+### Control Flow
+- [x] Loop control flow in wasm_lower (Phi nodes for loop variables, back edges)
+- [x] `ir_LOOP_BEGIN` / `ir_LOOP_END` generation in ir_bridge
+- [x] Block structures with labels, `br` (unconditional), `br_if` (conditional)
+- [x] Nested loops and nested conditionals
+- [x] Void-type if (side-effect-only, no return value)
+- [x] Select (ternary operator) via PHI
+- [x] Block-scoped branches correctly distinguished from loop-exit checks —
+      previously any `br_if` targeting a `Block` was assumed to be a loop-exit
+      check; this misclassified block-scoped jumps used to encode
+      value-producing ternaries (clang -O0's block+br_if+br idiom) as loop
+      exits, silently severing the enclosing loop's backedge and causing
+      infinite loops. Fixed by checking whether the innermost control frame
+      is actually a `Loop` at the point of the `br_if`.
+
+### Types & Arithmetic
+- [x] i32 arithmetic, comparisons, bitwise ops, clz/ctz/popcnt
+- [x] i64 basic arithmetic (add/sub/mul/div_s/rem_s), sign/zero extend, wrap
+- [x] F64 arithmetic: const, add, sub, mul, div, neg, sqrt
+- [x] F64 comparisons: eq, ne, lt, gt, le, ge (previously missing across
+      wasm_lower.cpp and ir_bridge.cpp despite being defined in the WasmOp/Op
+      enums and correctly parsed from binaryen's AST — silently corrupted the
+      value stack via `handle_Unsupported` when hit)
+- [x] Type conversions: i32→f64, f64→i32/i64 (trunc), i64 sign/zero extend
+
+### Memory
+- [x] i32.load / i32.store
+- [x] f64.load / f64.store
+- [x] wasm global variable init values correctly read from the module
+      (previously defaulted to 0, causing segfaults on kernels with large
+      stack frames — e.g. `__stack_pointer`)
+
+### Calls
+- [x] Calls to external/libc functions (e.g. `sqrt`) via `ir_CALL_1`
+
 ## High Priority 🔴
 
-### Loop Implementation (Estimated: 2-3 days)
-- [ ] Implement loop control flow in wasm_lower
-- [ ] Generate Phi nodes for loop variables
-- [ ] Handle back edges (br_if jumping back to loop start)
-- [ ] Generate proper CFG in ir_bridge
-  - [ ] ir_LOOP_BEGIN / ir_LOOP_END
-  - [ ] ir_IJMP for backward jumps
-- [ ] Test cases:
-  - [ ] Simple countdown loop
-  - [ ] Loop with accumulation (sum)
-  - [ ] Nested loops
+### User-Defined Function Calls
+- [ ] Multiple functions in a single module
+- [ ] Function signature management across calls
+- [ ] Recursive function support
+- [ ] Test with PolyBenchC kernels that factor out helper functions
 
-### Block Structures
-- [ ] Parse block with labels
-- [ ] Implement br (unconditional break)
-- [ ] Support early exit from blocks
-- [ ] Test with complex control flow
+### Remaining PolyBenchC Coverage
+- [ ] Medley category: deriche, floyd-warshall, nussinov — likely requires
+      `br_table` / switch-case support (see below), not yet confirmed
+- [ ] Stencils: adi, fdtd-2d
+- [ ] Solvers: cholesky, gramschmidt, ludcmp
 
 ## Medium Priority 🟡
 
-### Void-type If
-- [ ] Handle if statements with side effects only
-- [ ] Proper control flow without return values
-- [ ] Update ControlFrame tracking
-
-### Function Calls
-- [ ] Parse call instructions
-- [ ] Handle multiple functions in module
-- [ ] Function signature management
-- [ ] Recursive function support
+### Advanced Control Flow
+- [ ] `br_table` (switch-case) — currently unimplemented; no handler exists
+      in wasm_lower.cpp or ir_bridge.cpp for `WasmOp::BrTable`/`Op::BrTable`
+- [ ] Indirect calls (`call_indirect`)
 
 ### Memory Operations
-- [ ] i32.load / i32.store
-- [ ] Memory size management
-- [ ] Bounds checking
+- [ ] memory.grow
+- [ ] memory.copy / memory.fill edge cases (basic support exists via
+      external-call encoding, needs broader testing)
 
 ## Low Priority 🟢
 
-### Type System
-- [ ] i64 support
-- [ ] f32 / f64 floating point
-- [ ] Type conversions
-
-### Advanced Control Flow
-- [ ] br_table (switch-case)
-- [ ] Indirect calls (call_indirect)
-
 ### Optimizations
-- [ ] Dead code elimination
+- [ ] Dead code elimination beyond current degenerate-PHI cleanup
 - [ ] Constant folding
 - [ ] Loop invariant code motion
 
+### Type System
+- [ ] f32 support (currently only f64)
+- [ ] Multi-value returns
+
 ## Known Issues 🐛
 
-### Control Flow
-- Void-type if generates incorrect IR (returns constant instead of using control flow)
-- Loop and br_if parsed but not lowered to IR
-- No support for forward branches yet
-
 ### Code Quality
-- ExpressionStackWalker replaced with Visitor (refactoring complete)
-- Need to add more comprehensive tests
-- IR dump contains debug output that should be removable
+- Need more comprehensive regression tests beyond PolyBenchC (targeted unit
+  tests for individual ops, similar to `run_differential.sh`)
+- Some debug trace output (`TRACE(...)`) still present; controlled by
+  `ENABLE_IR_TRACE`, currently off by default
 
 ### Documentation
-- Need to document IR conventions
-- Add examples for each supported feature
-- Document dstogov/ir quirks (GT→LT transformation)
+- Document dstogov/ir quirks (GT→LT transformation affecting PHI operand
+  ordering for Select and if-else)
+- Add architecture notes on the three-layer lowering pipeline
+  (binaryen AST → WasmOp → ValueIR (Op) → dstogov/ir) and where to add
+  support for a new wasm instruction (all three layers must be updated;
+  missing any one layer causes silent fallthrough to `handle_Unsupported`
+  rather than a compile error — this has been the root cause of every
+  correctness bug found so far)
 
 ## Future Enhancements 💡
 
 - Source maps for debugging
-- Better error messages
+- Better error messages (currently many silent no-ops on malformed input)
 - WASI support
 - WebAssembly SIMD
-- Multi-value returns
 - Exception handling
 
 ## Notes
 
-- dstogov/ir optimizations affect PHI ordering (GT becomes LT with swapped operands)
-- Select and if-else require different PHI parameter orders due to this
-- Current focus: Get loops working before moving to other features
+- dstogov/ir optimizations affect PHI ordering (GT becomes LT with swapped
+  operands); Select and if-else require different PHI parameter orders as
+  a result.
+- **Lesson learned**: every correctness bug found during PolyBenchC
+  validation (global init values, F64Neg, F64 comparisons, br_if
+  misclassification) stemmed from an operation being defined in the
+  WasmOp/Op enums and correctly recognized by binaryen's AST converter, but
+  missing a handler in one of the two downstream layers (wasm_lower.cpp or
+  ir_bridge.cpp). None of these caused a compile error — they either
+  silently dropped values or, in the br_if case, silently corrupted control
+  flow. When adding support for a new wasm instruction, always verify all
+  three layers are wired up, not just the enum definitions.
+- Current focus: extend PolyBenchC coverage and add user-defined function
+  call support.
