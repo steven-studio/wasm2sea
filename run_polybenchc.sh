@@ -28,6 +28,8 @@ BENCHMARKS=(
   "lu kernel_lu"
   "covariance kernel_covariance"
   "correlation kernel_correlation"
+  "fdtd-2d kernel_fdtd_2d"
+  "adi kernel_adi"
 )
 
 PASS=0
