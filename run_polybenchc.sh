@@ -32,6 +32,7 @@ BENCHMARKS=(
   "adi kernel_adi"
   "ludcmp kernel_ludcmp"
   "cholesky kernel_cholesky"
+  "gramschmidt kernel_gramschmidt"
 )
 
 PASS=0
