@@ -21,14 +21,19 @@ Wasm2Sea translates WebAssembly bytecode to an intermediate representation (IR),
   - If-else with complex branches
   - Nested conditionals
   - Loop with br, br_if
+  - Block-scoped branches correctly distinguished from loop-exit checks
+    (e.g. clang -O0's block+br_if+br encoding of value-producing ternaries)
 
-### In Progress 🚧
-- **F64 Memory**: f64.load detection via `load->bytes == 8` (partially implemented)
+### Verified via Differential Testing ✓✓
+- **PolyBenchC**: 21/21 kernels passing against reference C implementations,
+  spanning Stencils, Linear Algebra, Solvers, and Datamining categories:
+  jacobi-1d, jacobi-2d, seidel-2d, heat-3d, gemm, 2mm, 3mm, atax, bicg,
+  gemver, gesummv, symm, syrk, syr2k, trmm, mvt, trisolv, durbin, lu,
+  covariance, correlation
 
 ### Planned 📋
-- Block structures
-- Function calls
-- Memory operations
+- User-defined function calls
+- Additional memory operations (memory.grow, memory.copy edge cases)
 
 See [TODO.md](TODO.md) for complete list.
 
@@ -112,6 +117,11 @@ Use the provided test script:
 - dstogov/ir converts `GT(a,b)` to `LT(b,a)` internally
 - This affects PHI parameter ordering in control flow
 - Select and if-else require different PHI orders as a result
+- `br_if` targeting a `Block` must only be treated as a loop-exit check when
+  the innermost control frame is a `Loop`; misclassifying block-scoped
+  branches (e.g. ternary expressions encoded as block+br_if+br at -O0) as
+  loop-exits silently corrupts the enclosing loop's control flow (fixed;
+  see commit history for the correlation.c PolyBenchC kernel)
 
 ## Examples
 
@@ -144,7 +154,11 @@ Uncomment debug prints in wasm_reader.cpp to see instruction sequence.
 
 ## Project Status
 
-This is a research/educational project demonstrating WebAssembly compilation. Current focus is on implementing loop support, which is the most complex remaining feature.
+This is a research/educational project demonstrating WebAssembly compilation.
+The compiler has been validated against 21/21 PolyBenchC kernels using
+differential testing against reference C implementations. Current focus is
+on extending coverage to remaining PolyBenchC categories (Medley: deriche,
+floyd-warshall, nussinov) and user-defined function calls.
 
 See [PROGRESS.md](PROGRESS.md) for detailed status and [TODO.md](TODO.md) for roadmap.
 
