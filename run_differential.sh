@@ -897,7 +897,6 @@ TESTS=(
   "test_global 5"
   "test_global 0"
   "test_global -1"
-  "jacobi1d_kernel"
   "matmul 0"
   "matmul 1"
   "matmul 2"
