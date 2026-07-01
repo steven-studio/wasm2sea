@@ -30,6 +30,7 @@ BENCHMARKS=(
   "correlation kernel_correlation"
   "fdtd-2d kernel_fdtd_2d"
   "adi kernel_adi"
+  "ludcmp kernel_ludcmp"
 )
 
 PASS=0
