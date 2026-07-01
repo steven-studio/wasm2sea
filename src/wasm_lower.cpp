@@ -823,19 +823,98 @@ static ValueIR cleanupValueIR(ValueIR& values) {
 // 主入口
 // ============================================================
 
+static InstrSeq rewriteTernaryBlocks(const InstrSeq& in) {
+    std::vector<Instr> src(in.begin(), in.end());
+    std::vector<Instr> out;
+    out.reserve(src.size());
+
+    std::function<int(size_t)> matchEnd = [&](size_t openIdx) -> int {
+        int depth = 1;
+        for (size_t k = openIdx + 1; k < src.size(); k++) {
+            WasmOp op = src[k].op;
+            if (op == WasmOp::Block || op == WasmOp::Loop || op == WasmOp::If) {
+                depth++;
+            } else if (op == WasmOp::End) {
+                depth--;
+                if (depth == 0) return (int)k;
+            }
+        }
+        return -1;
+    };
+
+    size_t i = 0;
+    while (i < src.size()) {
+        if (src[i].op == WasmOp::Block && i + 1 < src.size() &&
+            src[i + 1].op == WasmOp::Block) {
+            int outerEnd = matchEnd(i);
+            int innerEnd = (outerEnd >= 0) ? matchEnd(i + 1) : -1;
+
+            bool matched = false;
+            int splitEqz = -1, splitBrIf = -1, thenLocalSet = -1, thenBr = -1, elseLocalSet = -1;
+
+            if (outerEnd >= 0 && innerEnd >= 0 && (size_t)innerEnd < src.size()) {
+                for (int k = (int)i + 2; k + 1 < innerEnd; k++) {
+                    if (src[k].op == WasmOp::I32Eqz &&
+                        src[k + 1].op == WasmOp::Br_if && src[k + 1].operand == 0) {
+                        splitEqz = k;
+                        splitBrIf = k + 1;
+                        break;
+                    }
+                }
+                if (splitBrIf >= 0 && innerEnd - 2 > splitBrIf &&
+                    src[innerEnd - 1].op == WasmOp::Br && src[innerEnd - 1].operand == 1 &&
+                    src[innerEnd - 2].op == WasmOp::LocalSet) {
+                    thenLocalSet = innerEnd - 2;
+                    thenBr = innerEnd - 1;
+                    if (outerEnd - 1 > innerEnd &&
+                        src[outerEnd - 1].op == WasmOp::LocalSet &&
+                        src[outerEnd - 1].operand == src[thenLocalSet].operand) {
+                        elseLocalSet = outerEnd - 1;
+                        matched = true;
+                    }
+                }
+            }
+
+            if (matched) {
+                for (int k = (int)i + 2; k < splitEqz; k++) out.push_back(src[k]);
+                Instr ifIns; ifIns.op = WasmOp::If; ifIns.operand = 0;
+                out.push_back(ifIns);
+                for (int k = splitBrIf + 1; k <= thenLocalSet; k++) out.push_back(src[k]);
+                Instr elseIns; elseIns.op = WasmOp::Else; elseIns.operand = 0;
+                out.push_back(elseIns);
+                for (int k = innerEnd + 1; k <= elseLocalSet; k++) out.push_back(src[k]);
+                Instr endIns; endIns.op = WasmOp::End; endIns.operand = 2;
+                out.push_back(endIns);
+
+                fprintf(stderr, "[TERNARY_REWRITE] matched at i=%zu, outerEnd=%d\n", i, outerEnd);
+                i = (size_t)outerEnd + 1;
+                continue;
+            }
+        }
+        out.push_back(src[i]);
+        i++;
+    }
+
+    InstrSeq result;
+    result.numParams = in.numParams;
+    for (auto& ins : out) result.push_back(ins);
+    return result;
+}
+
 ValueIR lowerWasmToSsa(const InstrSeq& code,
                         const std::vector<std::string>& funcNames) {
-    LowerContext ctx(code, funcNames);
+    InstrSeq code2 = rewriteTernaryBlocks(code);
+    LowerContext ctx(code2, funcNames);
 
     size_t start_idx = 0;
-    if (!code.empty() && code[0].op == WasmOp::FuncInfo) {
-        ctx.numParams = static_cast<size_t>(code[0].operand);
+    if (!code2.empty() && code2[0].op == WasmOp::FuncInfo) {
+        ctx.numParams = static_cast<size_t>(code2[0].operand);
         start_idx = 1;
     }
         // fprintf(stderr, "=== SSA Lowering ===\nnumParams = %zu\n\n", ctx.numParams);
 
-    for (size_t i = start_idx; i < code.size(); i++) {
-        const Instr& ins = code[i];
+    for (size_t i = start_idx; i < code2.size(); i++) {
+        const Instr& ins = code2[i];
         auto it = kDispatch.find(ins.op);
         if (it != kDispatch.end()) {
             it->second(ctx, ins, i);

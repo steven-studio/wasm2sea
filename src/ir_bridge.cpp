@@ -383,7 +383,9 @@ void IRBridge::handleLocalGet(BuildContext& bc, const Value& val) {
     if (it == bc.local_vars.end()) { fprintf(stderr, "ERROR: LocalGet for untracked local_%d\n", var_idx); return; }
     ir_ref var_ref = it->second;
     ir_type t = bc.local_types.count(var_idx) ? bc.local_types[var_idx] : IR_I32;
-    ir_ref loaded = (t == IR_I64) ? ir_VLOAD_I64(var_ref) : ir_VLOAD_I32(var_ref);
+    ir_ref loaded = (t == IR_I64) ? ir_VLOAD_I64(var_ref)
+                  : (t == IR_DOUBLE) ? ir_VLOAD_D(var_ref)
+                  : ir_VLOAD_I32(var_ref);
     bc.value_map[i] = loaded;
     TRACE("  v%zu = LocalGet(local_%d) -> ref %d\n\n", i, var_idx, loaded);
 }
@@ -673,7 +675,10 @@ void IRBridge::handlePhi(BuildContext& bc, const Value& val) {
         TRACE("  v%zu = Phi (Loop) -> ref %d\n\n", i, phi);
     } else {
         if (val.operands.size() != 2) { TRACE("    ERROR: If Phi should have exactly 2 operands\n\n"); return; }
-        ir_ref phi = ir_PHI_2(IR_I32, bc.value_map[val.operands[0]], bc.value_map[val.operands[1]]);
+        ir_ref op0 = bc.value_map[val.operands[0]];
+        ir_ref op1 = bc.value_map[val.operands[1]];
+        ir_type phi_type = (ir_type)ctx->ir_base[op0].type;
+        ir_ref phi = ir_PHI_2(phi_type, op0, op1);
         bc.value_map[i] = phi;
         TRACE("  v%zu = Phi (If) -> ref %d\n\n", i, phi);
     }
