@@ -33,6 +33,7 @@ BENCHMARKS=(
   "ludcmp kernel_ludcmp"
   "cholesky kernel_cholesky"
   "gramschmidt kernel_gramschmidt"
+  "floyd-warshall kernel_floyd_warshall"
 )
 
 PASS=0
