@@ -25,11 +25,17 @@ Wasm2Sea translates WebAssembly bytecode to an intermediate representation (IR),
     (e.g. clang -O0's block+br_if+br encoding of value-producing ternaries)
 
 ### Verified via Differential Testing ✓✓
-- **PolyBenchC**: 21/21 kernels passing against reference C implementations,
-  spanning Stencils, Linear Algebra, Solvers, and Datamining categories:
-  jacobi-1d, jacobi-2d, seidel-2d, heat-3d, gemm, 2mm, 3mm, atax, bicg,
-  gemver, gesummv, symm, syrk, syr2k, trmm, mvt, trisolv, durbin, lu,
-  covariance, correlation
+- **PolyBenchC**: 27/29 kernels passing against reference C implementations,
+  spanning Stencils, Linear Algebra, Solvers, Datamining, and Medley
+  categories: jacobi-1d, jacobi-2d, seidel-2d, heat-3d, fdtd-2d, adi, gemm,
+  2mm, 3mm, atax, bicg, gemver, gesummv, symm, syrk, syr2k, trmm, mvt,
+  trisolv, durbin, lu, ludcmp, cholesky, gramschmidt, covariance,
+  correlation, floyd-warshall
+- **Ternary-expression correctness**: value-producing ternaries compiled by
+  clang -O0 via the block+block+eqz+br_if(0)+localset+br(1) idiom (e.g.
+  `path[i][j] < sum ? path[i][j] : sum` in floyd-warshall) are detected by
+  a pre-pass and rewritten into the existing, well-tested If/Else/End
+  representation, rather than trying to generalize Block/Br_if handling
 
 ### Planned 📋
 - User-defined function calls

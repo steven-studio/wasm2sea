@@ -2,13 +2,15 @@
 
 ## Verified ✓✓ (Differential Testing)
 
-### PolyBenchC — 21/21 kernels passing
-Stencils: jacobi-1d, jacobi-2d, seidel-2d, heat-3d
+### PolyBenchC — 27/29 kernels passing
+Stencils: jacobi-1d, jacobi-2d, seidel-2d, heat-3d, fdtd-2d, adi
 Linear Algebra: gemm, 2mm, 3mm, atax, bicg, gemver, gesummv, symm, syrk, syr2k, trmm, mvt
-Solvers: trisolv, durbin, lu
+Solvers: trisolv, durbin, lu, ludcmp, cholesky, gramschmidt
 Datamining: covariance, correlation
+Medley: floyd-warshall
 
 All verified against reference C implementations using `run_polybenchc.sh`.
+Remaining: deriche, nussinov (Medley category).
 
 ## Completed ✓
 
@@ -56,10 +58,8 @@ All verified against reference C implementations using `run_polybenchc.sh`.
 - [ ] Test with PolyBenchC kernels that factor out helper functions
 
 ### Remaining PolyBenchC Coverage
-- [ ] Medley category: deriche, floyd-warshall, nussinov — likely requires
-      `br_table` / switch-case support (see below), not yet confirmed
-- [ ] Stencils: adi, fdtd-2d
-- [ ] Solvers: cholesky, gramschmidt, ludcmp
+- [ ] Medley category: deriche, nussinov — floyd-warshall completed
+      (turned out to need a ternary-expression rewrite, not br_table)
 
 ## Medium Priority 🟡
 
@@ -85,6 +85,22 @@ All verified against reference C implementations using `run_polybenchc.sh`.
 - [ ] Multi-value returns
 
 ## Known Issues 🐛
+
+### Resolved — Ternary-expression / value-merging type bugs (found together)
+Three distinct bugs, only surfaced when compiling a genuine value-producing
+ternary through the wasm block+br_if idiom for the first time (floyd-warshall
+was the first kernel exercising this path with a double-typed merge):
+- `lowerWasmToSsa`'s main dispatch loop iterated over the ORIGINAL
+  (unrewritten) instruction sequence instead of the ternary-rewritten one,
+  silently making a correctly-firing rewrite pass a complete no-op.
+- `ir_bridge.cpp`'s `handleLocalGet` only distinguished `IR_I64` vs `IR_I32`
+  for `VLOAD`, misreading `IR_DOUBLE`-typed locals as 32-bit integers.
+- `ir_bridge.cpp`'s `handlePhi` hardcoded `IR_I32` for if/else value-merging
+  Phi nodes regardless of the actual merged value type.
+Root-caused via a minimal standalone `.wat` repro isolating the exact
+scenario independent of clang/PolyBenchC — essential since the three bugs'
+symptoms overlapped and debugging them simultaneously through the full
+pipeline was far harder than isolating each with a synthetic test case.
 
 ### Code Quality
 - Need more comprehensive regression tests beyond PolyBenchC (targeted unit
