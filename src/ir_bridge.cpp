@@ -285,6 +285,48 @@ void IRBridge::handleF64Neg(BuildContext& bc, const Value& val) {
     bc.value_map[bc.current_index] = ir_NEG_D(bc.value_map[val.lhs]);
 }
 
+void IRBridge::handleF64Eq(BuildContext& bc, const Value& val) {
+    ir_ctx* ctx = bc.ctx;
+    size_t i = bc.current_index;
+    if (val.lhs < 0 || val.rhs < 0) return;
+    bc.value_map[i] = ir_EQ(bc.value_map[val.lhs], bc.value_map[val.rhs]);
+}
+
+void IRBridge::handleF64Ne(BuildContext& bc, const Value& val) {
+    ir_ctx* ctx = bc.ctx;
+    size_t i = bc.current_index;
+    if (val.lhs < 0 || val.rhs < 0) return;
+    bc.value_map[i] = ir_NE(bc.value_map[val.lhs], bc.value_map[val.rhs]);
+}
+
+void IRBridge::handleF64Lt(BuildContext& bc, const Value& val) {
+    ir_ctx* ctx = bc.ctx;
+    size_t i = bc.current_index;
+    if (val.lhs < 0 || val.rhs < 0) return;
+    bc.value_map[i] = ir_LT(bc.value_map[val.lhs], bc.value_map[val.rhs]);
+}
+
+void IRBridge::handleF64Gt(BuildContext& bc, const Value& val) {
+    ir_ctx* ctx = bc.ctx;
+    size_t i = bc.current_index;
+    if (val.lhs < 0 || val.rhs < 0) return;
+    bc.value_map[i] = ir_GT(bc.value_map[val.lhs], bc.value_map[val.rhs]);
+}
+
+void IRBridge::handleF64Le(BuildContext& bc, const Value& val) {
+    ir_ctx* ctx = bc.ctx;
+    size_t i = bc.current_index;
+    if (val.lhs < 0 || val.rhs < 0) return;
+    bc.value_map[i] = ir_LE(bc.value_map[val.lhs], bc.value_map[val.rhs]);
+}
+
+void IRBridge::handleF64Ge(BuildContext& bc, const Value& val) {
+    ir_ctx* ctx = bc.ctx;
+    size_t i = bc.current_index;
+    if (val.lhs < 0 || val.rhs < 0) return;
+    bc.value_map[i] = ir_GE(bc.value_map[val.lhs], bc.value_map[val.rhs]);
+}
+
 void IRBridge::handleF64Sqrt(BuildContext& bc, const Value& val) {
     ir_ctx* ctx = bc.ctx;
     ir_ref name_ref = ir_str(ctx, "sqrt");
@@ -839,6 +881,12 @@ static const std::unordered_map<Op, HandlerFn> kDispatchTable = {
     { Op::I64ExtendI32U,  &IRBridge::handleI64ExtendI32U },
     { Op::F64Neg, &IRBridge::handleF64Neg },
     { Op::F64Sqrt, &IRBridge::handleF64Sqrt },
+    { Op::F64Eq, &IRBridge::handleF64Eq },
+    { Op::F64Ne, &IRBridge::handleF64Ne },
+    { Op::F64Lt, &IRBridge::handleF64Lt },
+    { Op::F64Gt, &IRBridge::handleF64Gt },
+    { Op::F64Le, &IRBridge::handleF64Le },
+    { Op::F64Ge, &IRBridge::handleF64Ge },
     { Op::F64ConvertI32S, &IRBridge::handleF64ConvertI },
     { Op::F64ConvertI64S, &IRBridge::handleF64ConvertI },
     { Op::F64ConvertI32U, &IRBridge::handleF64ConvertI },
@@ -949,10 +997,25 @@ IRFunction* IRBridge::build(const ValueIR& values,
             local_indices.insert(v.local_index);
     }
     std::unordered_map<int, ir_type> local_types;
-    for (int idx : local_indices)
-        local_types[idx] = (idx < (int)paramTypes.size() && paramTypes[idx] == ParamType::I64) ? IR_I64 :
-                        (idx < (int)paramTypes.size() && paramTypes[idx] == ParamType::F64) ? IR_DOUBLE :
-                        IR_I32;
+    for (int idx : local_indices) {
+        if (idx < (int)paramTypes.size() && paramTypes[idx] == ParamType::I64) {
+            local_types[idx] = IR_I64;
+        } else if (idx < (int)paramTypes.size() && paramTypes[idx] == ParamType::F64) {
+            local_types[idx] = IR_DOUBLE;
+        } else {
+            // 非 param local：掃描所有 LocalSet/LocalTee 對這個 idx 的賦值，
+            // 用實際賦值來源的型別決定 local 的型別（而非一律假設 I32）。
+            ir_type inferred = IR_I32;
+            for (const auto& v : values) {
+                if ((v.op == Op::LocalSet || v.op == Op::LocalTee) &&
+                    v.paramIndex == idx && v.lhs >= 0 && v.lhs < (int)values.size()) {
+                    if (values[v.lhs].type == ValueType::F64) { inferred = IR_DOUBLE; break; }
+                    if (values[v.lhs].type == ValueType::I64) { inferred = IR_I64; break; }
+                }
+            }
+            local_types[idx] = inferred;
+        }
+    }
                         
     // 先掃描哪些 local_idx 有被讀取
     std::unordered_set<int> read_locals;

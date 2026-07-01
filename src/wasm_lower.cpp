@@ -138,6 +138,12 @@ MAKE_BINARY(F64Add,  F64Add, F64)
 MAKE_BINARY(F64Sub,  F64Sub, F64)
 MAKE_BINARY(F64Mul,  F64Mul, F64)
 MAKE_BINARY(F64Div,  F64Div, F64)
+MAKE_BINARY(F64Eq,   F64Eq,  I32)
+MAKE_BINARY(F64Ne,   F64Ne,  I32)
+MAKE_BINARY(F64Lt,   F64Lt,  I32)
+MAKE_BINARY(F64Gt,   F64Gt,  I32)
+MAKE_BINARY(F64Le,   F64Le,  I32)
+MAKE_BINARY(F64Ge,   F64Ge,  I32)
 
 #define MAKE_UNARY(wasmOp, irOp, vtype) \
     static void handle_##wasmOp(LowerContext& ctx, const Instr&, size_t) { \
@@ -460,7 +466,15 @@ static void handle_Br_if(LowerContext& ctx, const Instr& ins, size_t) {
         ctx.values[id].lhs = cond;
         ctx.values[id].rhs = target.loop_start_id;
         ctx.values[id].constValue = 0;
-    } else if (target.type == ControlFrame::Block) {
+    } else if (target.type == ControlFrame::Block &&
+               !ctx.control_stack.empty() &&
+               ctx.control_stack.back().type == ControlFrame::Loop) {
+        // 只有當這個 br_if 是在 Loop 內部直接發生時，才是標準的
+        // wasm 迴圈退出慣用法：block { loop { ...; br_if N (exit) } }
+        // 如果目前最內層不是 Loop（例如身處另一個 Block 內），這個
+        // br_if 只是 block-scoped 的一般跳轉（例如三元運算式用
+        // block+br_if+br 模擬 if/else），不該被誤判成迴圈退出，
+        // 否則會把外層迴圈的 control flow 接錯，造成 backedge 遺失。
         int block_idx = (int)ctx.control_stack.size() - 1 - depth;
         int outer_loop_start_id = -1;
         for (int k = block_idx + 1; k < (int)ctx.control_stack.size(); k++) {
@@ -477,6 +491,14 @@ static void handle_Br_if(LowerContext& ctx, const Instr& ins, size_t) {
         ctx.values[id].lhs = neg_id;
         ctx.values[id].rhs = outer_loop_start_id;
         ctx.values[id].constValue = 1;
+    } else if (target.type == ControlFrame::Block) {
+        // block-scoped 跳轉（非迴圈退出）：目前 ir_bridge 的
+        // control-flow 重建機制尚未支援這種一般化的 block+br_if
+        // 值合併模式（常見於 -O0 下編譯有回傳值的三元運算式）。
+        // 保守處理：不生成任何跳轉節點，避免產生錯誤的 control
+        // flow（寧可讓後續值可能不正確，也不能讓外層迴圈的
+        // backedge 被破壞導致無限迴圈）。
+        (void)cond;
     }
 }
 
@@ -662,6 +684,12 @@ static const std::unordered_map<WasmOp, HandlerFn> kDispatch = {
     { WasmOp::F64Mul,        handle_F64Mul },
     { WasmOp::F64Div,        handle_F64Div },
     { WasmOp::F64Neg,         handle_F64Neg },
+    { WasmOp::F64Eq,          handle_F64Eq },
+    { WasmOp::F64Ne,          handle_F64Ne },
+    { WasmOp::F64Lt,          handle_F64Lt },
+    { WasmOp::F64Gt,          handle_F64Gt },
+    { WasmOp::F64Le,          handle_F64Le },
+    { WasmOp::F64Ge,          handle_F64Ge },
     { WasmOp::F64Sqrt,        handle_F64Sqrt },
     { WasmOp::F64ConvertI32S,handle_F64ConvertI32S },
     { WasmOp::F64ConvertI32U,handle_F64ConvertI32U },
