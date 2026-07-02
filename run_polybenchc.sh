@@ -34,6 +34,7 @@ BENCHMARKS=(
   "cholesky kernel_cholesky"
   "gramschmidt kernel_gramschmidt"
   "floyd-warshall kernel_floyd_warshall"
+  "nussinov kernel_nussinov"
 )
 
 PASS=0

@@ -820,9 +820,35 @@ static ValueIR cleanupValueIR(ValueIR& values) {
 }
 
 // ============================================================
-// 主入口
+// Pre-pass 1: rewrite value-producing ternary idiom into If/Else/End
 // ============================================================
-
+//
+// clang -O0 compiles a value-producing ternary (`cond ? A : B`) using
+// two nested Blocks with a leading Eqz+Br_if(0) early-exit:
+//
+//   Block(outer)
+//     Block(inner)
+//       <cond>
+//       Eqz
+//       Br_if(0)      ; skip "then" if cond is false
+//       <then...>
+//       LocalSet X    ; then 分支把值存進共用的 local X
+//       Br(1)         ; 跳過 else，到外層結尾
+//     End(inner)       ; else 分支的進入點
+//     <else...>
+//     LocalSet X       ; else 分支也存進同一個 local X（值收斂於此）
+//   End(outer)
+//
+// 目前的判斷條件要求 then/else 兩分支結尾都必須是 LocalSet 到「同一個」
+// local，才承認這是一個合法的三元運算式改寫目標。
+//
+// 已知限制：這個要求只涵蓋「會產生一個值」的情況。對於兩分支都只有
+// 副作用、完全沒有 LocalSet 收斂的 if/else（例如
+// `if (i<j-1) { table[i][j]=A; } else { table[i][j]=B; }` 這種直接寫
+// 記憶體、不經過任何共用 local 的寫法），這個函式目前無法辨識，會落
+// 入舊有的保守 fallback（br_if 被直接丟棄，導致 then/else 兩邊都無
+// 條件執行）。這是造成 nussinov 的 `i<j-1` guard 被靜默丟棄的直接原因，
+// 待後續與 rewriteGuardedBlocks 整合時一併處理。
 static InstrSeq rewriteTernaryBlocks(const InstrSeq& in) {
     std::vector<Instr> src(in.begin(), in.end());
     std::vector<Instr> out;
@@ -886,8 +912,91 @@ static InstrSeq rewriteTernaryBlocks(const InstrSeq& in) {
                 Instr endIns; endIns.op = WasmOp::End; endIns.operand = 2;
                 out.push_back(endIns);
 
-                fprintf(stderr, "[TERNARY_REWRITE] matched at i=%zu, outerEnd=%d\n", i, outerEnd);
                 i = (size_t)outerEnd + 1;
+                continue;
+            }
+        }
+        out.push_back(src[i]);
+        i++;
+    }
+
+    InstrSeq result;
+    result.numParams = in.numParams;
+    for (auto& ins : out) result.push_back(ins);
+    return result;
+}
+
+// ============================================================
+// Pre-pass 2: 把「無 else 的 guard」改寫成原生 If（不含 Else）
+// ============================================================
+//
+// clang -O0 對「只有副作用、不產生值、也沒有 else」的條件式（原始碼
+// 層面就是 `if (cond) { stmt; ... }`），用單一層 Block 包住一個
+// 「Eqz; Br_if(0)」提早跳出的慣用法來編譯：
+//
+//   Block
+//     <cond>
+//     Eqz
+//     Br_if(0)      ; cond 為 false 就跳到 block 結尾，跳過整段 body
+//     <body...>     ; 只有副作用的敘述，不產生任何值
+//   End
+//
+// 這跟會產生值的三元運算式慣用法（rewriteTernaryBlocks）不一樣：
+// 這裡只有「一層」Block（不是兩層巢狀），結尾也沒有「Br(1)」這個
+// 分隔符號、也沒有共用的 LocalSet 收斂——因為根本沒有值需要合併，
+// 只是一段「條件成立才執行」的副作用而已。
+static InstrSeq rewriteGuardedBlocks(const InstrSeq& in) {
+    std::vector<Instr> src(in.begin(), in.end());
+    std::vector<Instr> out;
+    out.reserve(src.size());
+
+    std::function<int(size_t)> matchEnd = [&](size_t openIdx) -> int {
+        int depth = 1;
+        for (size_t k = openIdx + 1; k < src.size(); k++) {
+            WasmOp op = src[k].op;
+            if (op == WasmOp::Block || op == WasmOp::Loop || op == WasmOp::If) {
+                depth++;
+            } else if (op == WasmOp::End) {
+                depth--;
+                if (depth == 0) return (int)k;
+            }
+        }
+        return -1;
+    };
+
+    size_t i = 0;
+    while (i < src.size()) {
+        if (src[i].op == WasmOp::Block) {
+            int blockEnd = matchEnd(i);
+            int splitEqz = -1, splitBrIf = -1;
+
+            if (blockEnd >= 0) {
+                int depth = 1;
+                for (int k = (int)i + 1; k < blockEnd; k++) {
+                    WasmOp op = src[k].op;
+                    if (op == WasmOp::Block || op == WasmOp::Loop || op == WasmOp::If) {
+                        depth++;
+                    } else if (op == WasmOp::End) {
+                        depth--;
+                    } else if (depth == 1 && op == WasmOp::I32Eqz &&
+                               k + 1 < blockEnd && src[k + 1].op == WasmOp::Br_if &&
+                               src[k + 1].operand == 0) {
+                        splitEqz = k;
+                        splitBrIf = k + 1;
+                        break;
+                    }
+                }
+            }
+
+            if (splitBrIf >= 0) {
+                for (int k = (int)i + 1; k < splitEqz; k++) out.push_back(src[k]);
+                Instr ifIns; ifIns.op = WasmOp::If; ifIns.operand = 0;
+                out.push_back(ifIns);
+                for (int k = splitBrIf + 1; k < blockEnd; k++) out.push_back(src[k]);
+                Instr endIns; endIns.op = WasmOp::End; endIns.operand = 0;
+                out.push_back(endIns);
+
+                i = (size_t)blockEnd + 1;
                 continue;
             }
         }
@@ -903,7 +1012,8 @@ static InstrSeq rewriteTernaryBlocks(const InstrSeq& in) {
 
 ValueIR lowerWasmToSsa(const InstrSeq& code,
                         const std::vector<std::string>& funcNames) {
-    InstrSeq code2 = rewriteTernaryBlocks(code);
+    InstrSeq code2a = rewriteTernaryBlocks(code);
+    InstrSeq code2 = rewriteGuardedBlocks(code2a);
     LowerContext ctx(code2, funcNames);
 
     size_t start_idx = 0;
