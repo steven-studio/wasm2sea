@@ -822,6 +822,72 @@ static ValueIR cleanupValueIR(ValueIR& values) {
 // ============================================================
 // Pre-pass: 把 block+br_if 模擬 if/else 的慣用法改寫成原生 If/Else/End
 // ============================================================
+//
+// 【這個函式在解決什麼問題】
+// clang -O0 對「block-scoped、非迴圈退出」的條件式，一律用
+// block(+block)+eqz+br_if(0) 這個慣用法編譯，涵蓋兩種形狀：
+//
+//   (a) 有 else（兩層巢狀 block）：
+//         Block(outer)
+//           Block(inner)
+//             <cond>
+//             Eqz
+//             Br_if(0)      ; cond 為 false 就跳到 inner block 結尾
+//             <then body>
+//             Br(1)         ; then 執行完，跳過 else，到 outer 結尾
+//           End(inner)       ; else 分支的進入點
+//           <else body>
+//         End(outer)
+//
+//   (b) 沒有 else（單層 block）：
+//         Block
+//           <cond>
+//           Eqz
+//           Br_if(0)        ; cond 為 false 就跳到 block 結尾（跳過整段 body）
+//           <body>
+//         End
+//
+// 我們自己既有的 handle_Br_if 只認得「迴圈退出」這一種 br_if 慣用法，
+// 其餘 block-scoped 的 br_if 一律保守丟棄（不產生任何跳轉節點），
+// 這會讓上述兩種形狀的 then/else 分支變成「無條件都執行」，是錯的。
+// 這個 pre-pass 在 wasm_lower 主迴圈開始前，先把符合這兩種形狀的
+// 片段改寫成原生的 If/(Else)/End，讓既有、已經驗證過的
+// handle_If/handle_Else/handle_End（含合併 locals 的 Phi 邏輯）
+// 直接處理，不需要再另外教 handle_Br_if 認得這些形狀。
+//
+// 【怎麼判斷 then/else 的邊界】
+// 邊界的判斷不依賴「then/else 結尾是不是 LocalSet 收斂到同一個
+// local」（這是舊版的作法，只認得「會產生一個值」的三元運算式），
+// 而是直接找 `Br(depth=1)` 這個跳轉指令本身當作 then body 的結尾——
+// 這是真正結構性的訊號，不管 then/else 兩邊是「產生一個值收斂到
+// 共用 local」（三元運算式）還是「純粹各自的副作用，例如直接
+// Store 到記憶體」（一般 if/else），這個訊號都成立，因此這個函式
+// 同時涵蓋這兩種情況。
+//
+// - matchEnd(openIdx)：從一個 Block/Loop/If 的開啟位置往後找，
+//   用深度計數找出它對應的 End 位置。
+// - findGuard(start, limit)：在 [start, limit) 範圍內、depth==1
+//   （相對於這段範圍本身）尋找第一個 Eqz+Br_if(0) 組合，作為
+//   guard 的條件判斷點。
+//
+// 【已知限制：短路 && / || 的多重堆疊 guard 尚未支援】
+// 若原始碼是 `if (A && B) {...}`，clang 會產生「兩個連續、都指向
+// 同一個 block 結尾的 Eqz+Br_if(0)」（A 為 false 時跳一次，B 為
+// false 時再跳一次，都跳到同一個進入點）。目前這個函式的
+// findGuard 只找「第一個」guard 就當作邊界，第二個 guard 會被
+// 誤當成 then/else body 的一部分照抄過去，導致更內層真正巢狀在
+// 裡面的 if/else（例如 nussinov 的
+// `if (j-1>=0 && i+1<n) { if (i<j-1) {...} else {...} }`）沒有
+// 被正確辨識、對應的跳轉語意也跟著跑掉。
+//
+// 曾經嘗試過遞迴版本（用巢狀 If + 複製 else body 處理多重堆疊
+// guard），對獨立的最小案例（單一短路 && + if/else）驗證正確，
+// 但套用到 nussinov 這種「三層巢狀 guard、疊加 470 個 wasm local」
+// 的規模時，會讓 dstogov/ir 的 register allocator 直接 segfault
+// （ir_compute_live_ranges, ir_ra.c:1408，NULL ival），懷疑是
+// dstogov/ir 本身在這種巢狀 Phi 鏈規模下的邊界案例，根因尚未找到。
+// 該版本保存在 experiment/recursive-guard-crashes-nussinov 分支，
+// 未合併進 main。nussinov 因此仍是已知失敗的 benchmark。
 static InstrSeq rewriteBlockBrIf(const InstrSeq& in) {
     std::vector<Instr> src(in.begin(), in.end());
     std::vector<Instr> out;

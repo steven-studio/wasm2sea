@@ -921,6 +921,7 @@ TESTS=(
   "factorial_rec 8"
   "factorial_rec 9"
   "factorial_rec 10"
+  "minidp"
 )
 
 PASS=0
@@ -938,6 +939,20 @@ for entry in "${TESTS[@]}"; do
       PASS=$((PASS+1))
     else
       echo "FAIL: jacobi1d_kernel"
+      cat /tmp/actual_out.txt
+      FAIL=$((FAIL+1))
+    fi
+    continue
+  fi
+
+  if [ "$TEST" = "minidp" ]; then
+    bash ~/wasm2sea/tests/run_minidp_test.sh minidp kernel_minidp > /tmp/actual_out.txt 2>&1
+
+    if grep -q "PASS minidp differential test" /tmp/actual_out.txt; then
+      echo "PASS: minidp"
+      PASS=$((PASS+1))
+    else
+      echo "FAIL: minidp"
       cat /tmp/actual_out.txt
       FAIL=$((FAIL+1))
     fi
