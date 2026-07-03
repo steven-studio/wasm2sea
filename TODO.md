@@ -2,15 +2,14 @@
 
 ## Verified ✓✓ (Differential Testing)
 
-### PolyBenchC — 28/29 kernels passing
+### PolyBenchC — 29/29 kernels passing (full suite complete)
 Stencils: jacobi-1d, jacobi-2d, seidel-2d, heat-3d, fdtd-2d, adi
 Linear Algebra: gemm, 2mm, 3mm, atax, bicg, gemver, gesummv, symm, syrk, syr2k, trmm, mvt
 Solvers: trisolv, durbin, lu, ludcmp, cholesky, gramschmidt
 Datamining: covariance, correlation
-Medley: floyd-warshall, nussinov
+Medley: floyd-warshall, nussinov, deriche
 
 All verified against reference C implementations using `run_polybenchc.sh`.
-Remaining: deriche (Medley category).
 
 ## Completed ✓
 
