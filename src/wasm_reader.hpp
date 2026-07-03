@@ -18,3 +18,10 @@ struct FunctionResult {
 // 從 .wasm 檔案讀取指令
 std::vector<FunctionResult> readWasmFile(const std::string& filename);
 extern int g_wasm_global_count;
+
+// 完整的函式名稱表，索引方式跟 wasm 原生的函式索引空間（import 在前，
+// 自己定義的函式在後）完全一致，跟 getFunctionIndex() 用同一套索引。
+// readWasmFile() 回傳的 std::vector<FunctionResult> 只包含「有 body」
+// 的函式（略過 import），索引已經跟原生 wasm 函式索引不同步，因此
+// Call 指令查詢 callee 名稱時不能用那份表，必須用這份完整表。
+extern std::vector<std::string> g_all_function_names;

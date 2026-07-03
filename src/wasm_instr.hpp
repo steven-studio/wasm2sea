@@ -61,6 +61,8 @@ enum class WasmOp {
     F64Const,
     F64Add, F64Sub, F64Mul, F64Div,
     F64Abs, F64Neg, F64Sqrt,
+    F64Exp, F64Log, F64Sin, F64Cos,
+    F64Pow,
     F64Min, F64Max,
     // F64 比較
     F64Eq, F64Ne, F64Lt, F64Gt, F64Le, F64Ge,

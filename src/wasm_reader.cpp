@@ -113,6 +113,17 @@ std::vector<FunctionResult> readWasmFile(const std::string& filename) {
 
         printf("Processing function [%zu]: %s\n", i, funcName.c_str());
 
+        // 建立完整的函式名稱表（含 import），索引跟 getFunctionIndex()
+        // 用的是同一套（wasm 原生索引空間：import 在前，自己定義的在
+        // 後）。直接複用剛剛算好的 funcName（已經正確地優先採用匯出
+        // 名稱、其次內部名稱、最後才 fallback 到索引），不要自己
+        // 重新算一次——之前這裡漏掉「優先用匯出名稱」這一步，導致
+        // 沒有內嵌 debug 名稱的函式（-O0 沒加 -g 很常見）錯誤地
+        // fallback 成 func_N，連自身遞迴呼叫都命名錯誤（factorial_rec
+        // 呼叫自己被錯誤地印成呼叫 func_0，而不是它真正的匯出名稱）。
+        if (g_all_function_names.size() <= i) g_all_function_names.resize(i + 1);
+        g_all_function_names[i] = funcName;
+
         // 获取参数数量
         size_t numParams = func->getNumParams();
         printf("Function has %zu parameters\n", numParams);
@@ -176,3 +187,4 @@ std::vector<FunctionResult> readWasmFile(const std::string& filename) {
     return results;
 }
 int g_wasm_global_count = 0;
+std::vector<std::string> g_all_function_names;

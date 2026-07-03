@@ -95,6 +95,11 @@ static const char* opToString(WasmOp op) {
     case WasmOp::F64Abs:         return "F64Abs";
     case WasmOp::F64Neg:         return "F64Neg";
     case WasmOp::F64Sqrt:        return "F64Sqrt";
+    case WasmOp::F64Exp:         return "F64Exp";
+    case WasmOp::F64Log:         return "F64Log";
+    case WasmOp::F64Sin:         return "F64Sin";
+    case WasmOp::F64Cos:         return "F64Cos";
+    case WasmOp::F64Pow:         return "F64Pow";
     case WasmOp::F64Min:         return "F64Min";
     case WasmOp::F64Max:         return "F64Max";
     case WasmOp::F64Eq:          return "F64Eq";

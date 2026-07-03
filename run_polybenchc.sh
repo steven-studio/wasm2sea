@@ -35,6 +35,7 @@ BENCHMARKS=(
   "gramschmidt kernel_gramschmidt"
   "floyd-warshall kernel_floyd_warshall"
   "nussinov kernel_nussinov"
+  "deriche kernel_deriche"
 )
 
 PASS=0
@@ -50,6 +51,7 @@ for entry in "${BENCHMARKS[@]}"; do
   clang --target=wasm32 \
     -O0 -nostdlib \
     -Wl,--no-entry \
+    -Wl,--allow-undefined \
     -Wl,--export=$KERNEL \
     -o /tmp/${NAME}.wasm \
     ~/wasm2sea/benchmarks/polybench/kernels/${NAME}.c

@@ -105,10 +105,13 @@ int main(int argc, char* argv[]) {
         // debug dump disabled for benchmark mode
         // dumpInstrSeq(code);
 
-        // 建函數名稱表
-        std::vector<std::string> funcNames;
-        for (const auto& f : functions)
-            funcNames.push_back(f.name);
+        // 建函數名稱表：Call 指令的 callee_idx 是相對於 wasm 原生的
+        // 完整函式索引空間（import 在前，自己定義的函式在後）編碼的，
+        // 但 `functions`（readWasmFile 的回傳值）已經略過了 import
+        // 函式（沒有 body），索引跟原生 wasm 索引不同步。這裡改用
+        // g_all_function_names（在 readWasmFile 內部、略過 import 之前
+        // 建立的完整表），確保索引跟 Call 指令的 callee_idx 一致。
+        std::vector<std::string> funcNames = g_all_function_names;
 
         ValueIR values = lowerWasmToSsa(code, funcNames);
         dumpValueIR(values);

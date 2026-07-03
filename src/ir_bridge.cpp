@@ -334,6 +334,49 @@ void IRBridge::handleF64Sqrt(BuildContext& bc, const Value& val) {
     bc.value_map[bc.current_index] = ir_CALL_1(IR_DOUBLE, func_ref, bc.value_map[val.lhs]);
 }
 
+void IRBridge::handleF64Exp(BuildContext& bc, const Value& val) {
+    ir_ctx* ctx = bc.ctx;
+    ir_ref name_ref = ir_str(ctx, "exp");
+    ir_ref func_ref = ir_const_func(ctx, name_ref, IR_UNUSED);
+    bc.value_map[bc.current_index] = ir_CALL_1(IR_DOUBLE, func_ref, bc.value_map[val.lhs]);
+}
+
+void IRBridge::handleF64Log(BuildContext& bc, const Value& val) {
+    ir_ctx* ctx = bc.ctx;
+    ir_ref name_ref = ir_str(ctx, "log");
+    ir_ref func_ref = ir_const_func(ctx, name_ref, IR_UNUSED);
+    bc.value_map[bc.current_index] = ir_CALL_1(IR_DOUBLE, func_ref, bc.value_map[val.lhs]);
+}
+
+void IRBridge::handleF64Sin(BuildContext& bc, const Value& val) {
+    ir_ctx* ctx = bc.ctx;
+    ir_ref name_ref = ir_str(ctx, "sin");
+    ir_ref func_ref = ir_const_func(ctx, name_ref, IR_UNUSED);
+    bc.value_map[bc.current_index] = ir_CALL_1(IR_DOUBLE, func_ref, bc.value_map[val.lhs]);
+}
+
+void IRBridge::handleF64Cos(BuildContext& bc, const Value& val) {
+    ir_ctx* ctx = bc.ctx;
+    ir_ref name_ref = ir_str(ctx, "cos");
+    ir_ref func_ref = ir_const_func(ctx, name_ref, IR_UNUSED);
+    bc.value_map[bc.current_index] = ir_CALL_1(IR_DOUBLE, func_ref, bc.value_map[val.lhs]);
+}
+
+void IRBridge::handleF64Abs(BuildContext& bc, const Value& val) {
+    ir_ctx* ctx = bc.ctx;
+    bc.value_map[bc.current_index] = ir_ABS_D(bc.value_map[val.lhs]);
+}
+
+void IRBridge::handleF64Min(BuildContext& bc, const Value& val) {
+    ir_ctx* ctx = bc.ctx;
+    bc.value_map[bc.current_index] = ir_MIN_D(bc.value_map[val.lhs], bc.value_map[val.rhs]);
+}
+
+void IRBridge::handleF64Max(BuildContext& bc, const Value& val) {
+    ir_ctx* ctx = bc.ctx;
+    bc.value_map[bc.current_index] = ir_MAX_D(bc.value_map[val.lhs], bc.value_map[val.rhs]);
+}
+
 void IRBridge::handleF64ConvertI(BuildContext& bc, const Value& val) {
     ir_ctx* ctx = bc.ctx;
     bc.value_map[bc.current_index] = ir_INT2D(bc.value_map[val.lhs]);
@@ -817,7 +860,23 @@ void IRBridge::handleCall(BuildContext& bc, const Value& val) {
     for (int arg_id : val.operands)
         if (arg_id >= 0 && arg_id < (int)bc.value_map.size())
             arg_refs.push_back(bc.value_map[arg_id]);
-    bc.value_map[i] = ir_CALL_N(IR_I32, func_ref, (uint32_t)arg_refs.size(), arg_refs.data());
+    // 回傳型別原本寫死 IR_I32，對標準 libm 數學函式（回傳 double）
+    // 是錯的——這是今天 deriche 這個 kernel 才第一次踩到的情況
+    // （之前只有 handleF64Sqrt/Exp/Log/Sin/Cos 這幾個「單參數、內建
+    // 特判」的 handler 有正確處理 double 回傳，通用的 handleCall
+    // 從未被要求處理過回傳 double 的外部呼叫）。
+    // 這裡先用已知的標準數學函式名稱清單做特判；未來若有更多外部
+    // 函式呼叫需要非 I32 回傳型別，需要從 wasm 的函式簽章正確推導，
+    // 而不是繼續擴充這個清單。
+    static const std::unordered_set<std::string> kDoubleReturningFuncs = {
+        "exp", "expf", "pow", "powf", "log", "logf",
+        "sin", "sinf", "cos", "cosf", "sqrt", "sqrtf",
+        "tan", "tanf", "atan", "atanf", "atan2", "atan2f",
+        "exp2", "exp2f", "log2", "log2f", "log10", "log10f",
+        "fabs", "fabsf", "floor", "floorf", "ceil", "ceilf"
+    };
+    ir_type ret_type = kDoubleReturningFuncs.count(cname) ? IR_DOUBLE : IR_I32;
+    bc.value_map[i] = ir_CALL_N(ret_type, func_ref, (uint32_t)arg_refs.size(), arg_refs.data());
     TRACE("  v%zu = Call(%s, %zu args)\n", i, val.callee_name.c_str(), val.operands.size());
 }
 
@@ -886,6 +945,10 @@ static const std::unordered_map<Op, HandlerFn> kDispatchTable = {
     { Op::I64ExtendI32U,  &IRBridge::handleI64ExtendI32U },
     { Op::F64Neg, &IRBridge::handleF64Neg },
     { Op::F64Sqrt, &IRBridge::handleF64Sqrt },
+    { Op::F64Exp, &IRBridge::handleF64Exp },
+    { Op::F64Log, &IRBridge::handleF64Log },
+    { Op::F64Sin, &IRBridge::handleF64Sin },
+    { Op::F64Cos, &IRBridge::handleF64Cos },
     { Op::F64Eq, &IRBridge::handleF64Eq },
     { Op::F64Ne, &IRBridge::handleF64Ne },
     { Op::F64Lt, &IRBridge::handleF64Lt },
