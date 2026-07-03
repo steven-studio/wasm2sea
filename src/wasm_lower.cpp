@@ -831,6 +831,37 @@ static ValueIR cleanupValueIR(ValueIR& values) {
 }
 
 // ============================================================
+// ============================================================
+// 【演進脈絡總覽】這段邏輯是怎麼走到現在這個樣子的
+// ============================================================
+// 這是本檔案裡改動次數最多、也最複雜的一段邏輯，經過好幾輪迭代：
+//
+//  1. 最早只有 rewriteTernaryBlocks：只認得「有 LocalSet 收斂」的
+//     兩層 block 三元運算式（例如 floyd-warshall 的
+//     `path[i][j]<sum ? path[i][j] : sum`）。
+//  2. 發現 nussinov 的 `if (i<j-1) {...} else {...}`（兩邊都是
+//     Store，沒有 LocalSet 收斂）完全沒被辨識，於是放寬判斷條件，
+//     改用 Br(depth=1) 這個結構性訊號取代「猜 LocalSet」，統一成
+//     現在的 rewriteBlockBrIf，同時涵蓋有/無 LocalSet 收斂、有/無
+//     else 的情況。
+//  3. 發現短路 `&&`（例如 `if (j-1>=0 && i+1<n)`）會產生多個堆疊
+//     的 guard，原本的邏輯只吃第一個，於是加上 findAllGuards，把
+//     堆疊的 guard 合併成單一 And 提前求值（見下方 findAllGuards
+//     的完整說明，含「為什麼不用巢狀 If」的取捨理由）。
+//  4. 發現「guard 處理完之後的 body」需要遞迴再檢查一次，才能抓到
+//     巢狀在裡面的其他 if/else（nussinov 真正卡住的地方），於是把
+//     主掃描邏輯包成可遞迴呼叫的 rewriteSpan，但刻意把遞迴範圍限縮
+//     在「已知是 guard/if-else 的 body」，不去碰泛用的 Loop 遞迴
+//     （見下方 rewriteSpan 的完整說明，含 dstogov/ir segfault 的
+//     教訓）。
+//
+// 這條路上也有一次失敗的嘗試：泛用地遞迴進入任意 Loop body、並用
+// 巢狀 If + 複製 else body 處理堆疊 guard，對獨立最小案例是對的，
+// 但在 nussinov 的規模下讓 dstogov/ir 的 register allocator
+// segfault，保留在 experiment/recursive-guard-crashes-nussinov
+// 分支，未合併進 main。
+// ============================================================
+
 // Pre-pass: 把 block+br_if 模擬 if/else 的慣用法改寫成原生 If/Else/End
 // ============================================================
 //
