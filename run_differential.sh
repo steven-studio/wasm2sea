@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# 把 varargs FFI 測試原始碼複製到 ir 專案,供編譯/連結使用
+cp ~/wasm2sea/tests/run_varargs_ffi*.c ~/wasm2sea/third_party/dstogov-ir/
+
 TESTS_ADD=(
   "add 0 0"
   "add 1 0"
