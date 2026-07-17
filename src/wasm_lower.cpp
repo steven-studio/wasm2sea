@@ -906,12 +906,6 @@ static ValueIR cleanupValueIR(ValueIR& values) {
 // Store 到記憶體」（一般 if/else），這個訊號都成立，因此這個函式
 // 同時涵蓋這兩種情況。
 //
-// - matchEnd(openIdx)：從一個 Block/Loop/If 的開啟位置往後找，
-//   用深度計數找出它對應的 End 位置。
-// - findGuard(start, limit)：在 [start, limit) 範圍內、depth==1
-//   （相對於這段範圍本身）尋找第一個 Eqz+Br_if(0) 組合，作為
-//   guard 的條件判斷點。
-//
 // 【已知限制：短路 && / || 的多重堆疊 guard 尚未支援】
 // 若原始碼是 `if (A && B) {...}`，clang 會產生「兩個連續、都指向
 // 同一個 block 結尾的 Eqz+Br_if(0)」（A 為 false 時跳一次，B 為
@@ -930,171 +924,171 @@ static ValueIR cleanupValueIR(ValueIR& values) {
 // dstogov/ir 本身在這種巢狀 Phi 鏈規模下的邊界案例，根因尚未找到。
 // 該版本保存在 experiment/recursive-guard-crashes-nussinov 分支，
 // 未合併進 main。nussinov 因此仍是已知失敗的 benchmark。
-static InstrSeq rewriteBlockBrIf(const InstrSeq& in) {
-    std::vector<Instr> src(in.begin(), in.end());
-    std::vector<Instr> out;
-    out.reserve(src.size());
 
-    std::function<int(size_t)> matchEnd = [&](size_t openIdx) -> int {
-        int depth = 1;
-        for (size_t k = openIdx + 1; k < src.size(); k++) {
-            WasmOp op = src[k].op;
-            if (op == WasmOp::Block || op == WasmOp::Loop || op == WasmOp::If) {
-                depth++;
-            } else if (op == WasmOp::End) {
-                depth--;
-                if (depth == 0) return (int)k;
-            }
+// 從 openIdx（一個 Block/Loop/If）往後掃，找到與它配對的 End 的索引。
+// depth 用來處理巢狀：遇到 Block/Loop/If 深度 +1，遇到 End 深度 -1，
+// 深度歸零時就是配對的 End。找不到回傳 -1。
+static int matchBlockEnd(const std::vector<Instr>& src, size_t openIdx) {
+    int depth = 1;
+    for (size_t k = openIdx + 1; k < src.size(); k++) {
+        WasmOp op = src[k].op;
+        if (op == WasmOp::Block || op == WasmOp::Loop || op == WasmOp::If) {
+            depth++;
+        } else if (op == WasmOp::End) {
+            depth--;
+            if (depth == 0) return (int)k;
         }
-        return -1;
-    };
+    }
+    return -1;
+}
 
-    auto findGuard = [&](int start, int limit) -> std::pair<int, int> {
-        int depth = 1;
-        for (int k = start; k < limit; k++) {
-            WasmOp op = src[k].op;
-            if (op == WasmOp::Block || op == WasmOp::Loop || op == WasmOp::If) {
-                depth++;
-            } else if (op == WasmOp::End) {
-                depth--;
-            } else if (depth == 1 && op == WasmOp::I32Eqz &&
-                       k + 1 < limit && src[k + 1].op == WasmOp::Br_if &&
-                       src[k + 1].operand == 0) {
-                return {k, k + 1};
-            }
+// 在 [start, limit) 範圍內、depth==1（相對於這段範圍本身）尋找
+// 第一個 Eqz+Br_if(0) 組合，作為 guard 的條件判斷點。
+// 回傳 {Eqz 的位置, Br_if 的位置}；找不到回傳 {-1, -1}。
+static std::pair<int, int> findGuard(const std::vector<Instr>& src, int start, int limit) {
+    int depth = 1;
+    for (int k = start; k < limit; k++) {
+        WasmOp op = src[k].op;
+        if (op == WasmOp::Block || op == WasmOp::Loop || op == WasmOp::If) {
+            depth++;
+        } else if (op == WasmOp::End) {
+            depth--;
+        } else if (depth == 1 && op == WasmOp::I32Eqz &&
+                   k + 1 < limit && src[k + 1].op == WasmOp::Br_if &&
+                   src[k + 1].operand == 0) {
+            return {k, k + 1};
         }
-        return {-1, -1};
-    };
+    }
+    return {-1, -1};
+}
 
-    // 找出從 start 開始、連續堆疊在一起的多個 guard（例如短路 &&
-    // 產生的「Eqz+Br_if(0)」重複出現多次，中間只夾著下一個條件的
-    // 計算，沒有其他 Block/Loop/If）。回傳：合併後改寫出來的指令
-    // （把每一段 guard 的原始條件都原封不動接上，中間插入 I32And
-    // 合併成一個值），以及最後一個 br_if 之後、真正 body 開始的
-    // 位置。
-    //
-    // 這裡選擇「合併成單一 And 提前求值」而不是「巢狀 If、複製 else
-    // 保留短路求值順序」，是因為後者在 nussinov 這種三層巢狀、
-    // 470 個 wasm local 的規模下，會讓 dstogov/ir 的 register
-    // allocator segfault（ir_compute_live_ranges, ir_ra.c:1408），
-    // 根因尚未找到（相關嘗試保留在
-    // experiment/recursive-guard-crashes-nussinov 分支）。
-    //
-    // 提前求值兩個條件、而非短路求值，語意上的差異只有：當第一個
-    // 條件為 false、且第二個條件「求值本身會有副作用或可能出錯」
-    // 時才會出問題。對於 nussinov 這種所有 guard 都是單純的整數
-    // 比較（沒有副作用、不會出錯）而言，這個差異是安全的；但這不是
-    // 一個通用、對任何 && 都成立的正確轉換，未來若遇到 guard 本身
-    // 有副作用的情況，需要換回巢狀 If 的處理方式。
-    auto findAllGuards = [&](int start, int limit) -> std::tuple<std::vector<Instr>, int> {
-        std::vector<Instr> combined;
-        int pos = start;
-        int lastBrIfEnd = -1;
+// 找出從 start 開始、連續堆疊在一起的多個 guard（例如短路 &&
+// 產生的「Eqz+Br_if(0)」重複出現多次，中間只夾著下一個條件的
+// 計算，沒有其他 Block/Loop/If）。回傳：合併後改寫出來的指令
+// （把每一段 guard 的原始條件都原封不動接上，中間插入 I32And
+// 合併成一個值），以及最後一個 br_if 之後、真正 body 開始的
+// 位置。
+//
+// 這裡選擇「合併成單一 And 提前求值」而不是「巢狀 If、複製 else
+// 保留短路求值順序」，是因為後者在 nussinov 這種三層巢狀、
+// 470 個 wasm local 的規模下，會讓 dstogov/ir 的 register
+// allocator segfault（ir_compute_live_ranges, ir_ra.c:1408），
+// 根因尚未找到（相關嘗試保留在
+// experiment/recursive-guard-crashes-nussinov 分支）。
+//
+// 提前求值兩個條件、而非短路求值，語意上的差異只有：當第一個
+// 條件為 false、且第二個條件「求值本身會有副作用或可能出錯」
+// 時才會出問題。對於 nussinov 這種所有 guard 都是單純的整數
+// 比較（沒有副作用、不會出錯）而言，這個差異是安全的；但這不是
+// 一個通用、對任何 && 都成立的正確轉換，未來若遇到 guard 本身
+// 有副作用的情況，需要換回巢狀 If 的處理方式。
+static std::tuple<std::vector<Instr>, int> findAllGuards(
+        const std::vector<Instr>& src, int start, int limit) {
+    std::vector<Instr> combined;
+    int pos = start;
+    int lastBrIfEnd = -1;
 
-        while (true) {
-            auto guardResult = findGuard(pos, limit);
-            int eqzIdx = guardResult.first, brIfIdx = guardResult.second;
-            if (brIfIdx < 0) break;
+    while (true) {
+        auto guardResult = findGuard(src, pos, limit);
+        int eqzIdx = guardResult.first, brIfIdx = guardResult.second;
+        if (brIfIdx < 0) break;
 
-            // 這段 guard 的「原始條件」是 [pos, eqzIdx)，不含 Eqz 本身
-            // （這樣才是 Eqz 取反前的原始布林值）。
-            for (int k = pos; k < eqzIdx; k++) combined.push_back(src[k]);
+        for (int k = pos; k < eqzIdx; k++) combined.push_back(src[k]);
 
-            if (!combined.empty() && lastBrIfEnd >= 0) {
-                // 這不是第一個 guard，跟前一個已收集的條件用 And 合併。
-                Instr andIns; andIns.op = WasmOp::I32And; andIns.operand = 0;
-                combined.push_back(andIns);
-            }
-
-            lastBrIfEnd = brIfIdx + 1;
-            pos = brIfIdx + 1;
+        if (!combined.empty() && lastBrIfEnd >= 0) {
+            Instr andIns; andIns.op = WasmOp::I32And; andIns.operand = 0;
+            combined.push_back(andIns);
         }
 
-        return {combined, lastBrIfEnd};
-    };
+        lastBrIfEnd = brIfIdx + 1;
+        pos = brIfIdx + 1;
+    }
 
-    // rewriteSpan：對 [start, limit) 這段範圍做一次線性掃描改寫。
-    // 包成一個可遞迴呼叫的函式，這樣「guard 處理完之後的 body」跟
-    // 「兩層 if/else 的 then/else body」都能遞迴地再次檢查，找出
-    // 巢狀在裡面的其他 guard 或 if/else（例如 nussinov 的
-    // `if (j-1>=0 && i+1<n) { if (i<j-1) {...} else {...} }`，
-    // 外層 guard 處理完，還要遞迴進去才能抓到內層真正的 if/else）。
-    //
-    // 刻意不遞迴進入 Loop 或其他無法辨識的 Block 內容——先前的嘗試
-    // 曾經泛用地遞迴進入任意 Loop body，結果讓 dstogov/ir 的
-    // register allocator 在 nussinov 這種規模下 segfault
-    // （ir_ra.c:1408），根因未明。這裡改成只在「已經確定是 guard
-    // 或 if/else 的 body/then/else」這幾個明確、範圍受限的地方
-    // 遞迴，避免重蹈覆轍。
-    std::function<std::vector<Instr>(int, int)> rewriteSpan =
-        [&](int start, int limit) -> std::vector<Instr> {
-        std::vector<Instr> localOut;
-        int i = start;
-        while (i < limit) {
-            bool matched = false;
+    return {combined, lastBrIfEnd};
+}
 
-            if (src[i].op == WasmOp::Block && i + 1 < limit &&
-                src[i + 1].op == WasmOp::Block) {
-                int outerEnd = matchEnd(i);
-                int innerEnd = (outerEnd >= 0 && outerEnd <= limit) ? matchEnd(i + 1) : -1;
+// 對 [start, limit) 這段範圍做一次線性掃描改寫。是遞迴函式，這樣
+// 「guard 處理完之後的 body」跟「兩層 if/else 的 then/else body」
+// 都能遞迴地再次檢查，找出巢狀在裡面的其他 guard 或 if/else（例如
+// nussinov 的 `if (j-1>=0 && i+1<n) { if (i<j-1) {...} else {...} }`，
+// 外層 guard 處理完，還要遞迴進去才能抓到內層真正的 if/else）。
+//
+// 刻意不遞迴進入 Loop 或其他無法辨識的 Block 內容——先前的嘗試
+// 曾經泛用地遞迴進入任意 Loop body，結果讓 dstogov/ir 的
+// register allocator 在 nussinov 這種規模下 segfault
+// （ir_ra.c:1408），根因未明。這裡改成只在「已經確定是 guard
+// 或 if/else 的 body/then/else」這幾個明確、範圍受限的地方
+// 遞迴，避免重蹈覆轍。
+static std::vector<Instr> rewriteSpan(const std::vector<Instr>& src, int start, int limit) {
+    std::vector<Instr> localOut;
+    int i = start;
+    while (i < limit) {
+        bool matched = false;
 
-                if (outerEnd >= 0 && outerEnd <= limit && innerEnd >= 0 && innerEnd < outerEnd) {
-                    auto [condInstrs, brIfEnd] = findAllGuards(i + 2, innerEnd);
+        if (src[i].op == WasmOp::Block && i + 1 < limit &&
+            src[i + 1].op == WasmOp::Block) {
+            int outerEnd = matchBlockEnd(src, i);
+            int innerEnd = (outerEnd >= 0 && outerEnd <= limit) ? matchBlockEnd(src, i + 1) : -1;
 
-                    if (brIfEnd >= 0) {
-                        int thenBr = -1;
-                        for (int k = brIfEnd; k < innerEnd; k++) {
-                            if (src[k].op == WasmOp::Br && src[k].operand == 1) {
-                                thenBr = k;
-                            }
-                        }
-                        if (thenBr == innerEnd - 1) {
-                            localOut.insert(localOut.end(), condInstrs.begin(), condInstrs.end());
-                            Instr ifIns; ifIns.op = WasmOp::If; ifIns.operand = 0;
-                            localOut.push_back(ifIns);
-                            auto thenBody = rewriteSpan(brIfEnd, thenBr);
-                            localOut.insert(localOut.end(), thenBody.begin(), thenBody.end());
-                            Instr elseIns; elseIns.op = WasmOp::Else; elseIns.operand = 0;
-                            localOut.push_back(elseIns);
-                            auto elseBody = rewriteSpan(innerEnd + 1, outerEnd);
-                            localOut.insert(localOut.end(), elseBody.begin(), elseBody.end());
-                            Instr endIns; endIns.op = WasmOp::End; endIns.operand = 2;
-                            localOut.push_back(endIns);
+            if (outerEnd >= 0 && outerEnd <= limit && innerEnd >= 0 && innerEnd < outerEnd) {
+                auto [condInstrs, brIfEnd] = findAllGuards(src, i + 2, innerEnd);
 
-                            i = outerEnd + 1;
-                            matched = true;
+                if (brIfEnd >= 0) {
+                    int thenBr = -1;
+                    for (int k = brIfEnd; k < innerEnd; k++) {
+                        if (src[k].op == WasmOp::Br && src[k].operand == 1) {
+                            thenBr = k;
                         }
                     }
-                }
-            }
-
-            if (!matched && src[i].op == WasmOp::Block) {
-                int blockEnd = matchEnd(i);
-                if (blockEnd >= 0 && blockEnd <= limit) {
-                    auto [condInstrs, brIfEnd] = findAllGuards(i + 1, blockEnd);
-                    if (brIfEnd >= 0) {
+                    if (thenBr == innerEnd - 1) {
                         localOut.insert(localOut.end(), condInstrs.begin(), condInstrs.end());
                         Instr ifIns; ifIns.op = WasmOp::If; ifIns.operand = 0;
                         localOut.push_back(ifIns);
-                        auto body = rewriteSpan(brIfEnd, blockEnd);
-                        localOut.insert(localOut.end(), body.begin(), body.end());
-                        Instr endIns; endIns.op = WasmOp::End; endIns.operand = 0;
+                        auto thenBody = rewriteSpan(src, brIfEnd, thenBr);
+                        localOut.insert(localOut.end(), thenBody.begin(), thenBody.end());
+                        Instr elseIns; elseIns.op = WasmOp::Else; elseIns.operand = 0;
+                        localOut.push_back(elseIns);
+                        auto elseBody = rewriteSpan(src, innerEnd + 1, outerEnd);
+                        localOut.insert(localOut.end(), elseBody.begin(), elseBody.end());
+                        Instr endIns; endIns.op = WasmOp::End; endIns.operand = 2;
                         localOut.push_back(endIns);
 
-                        i = blockEnd + 1;
+                        i = outerEnd + 1;
                         matched = true;
                     }
                 }
             }
-
-            if (matched) continue;
-            localOut.push_back(src[i]);
-            i++;
         }
-        return localOut;
-    };
 
-    out = rewriteSpan(0, (int)src.size());
+        if (!matched && src[i].op == WasmOp::Block) {
+            int blockEnd = matchBlockEnd(src, i);
+            if (blockEnd >= 0 && blockEnd <= limit) {
+                auto [condInstrs, brIfEnd] = findAllGuards(src, i + 1, blockEnd);
+                if (brIfEnd >= 0) {
+                    localOut.insert(localOut.end(), condInstrs.begin(), condInstrs.end());
+                    Instr ifIns; ifIns.op = WasmOp::If; ifIns.operand = 0;
+                    localOut.push_back(ifIns);
+                    auto body = rewriteSpan(src, brIfEnd, blockEnd);
+                    localOut.insert(localOut.end(), body.begin(), body.end());
+                    Instr endIns; endIns.op = WasmOp::End; endIns.operand = 0;
+                    localOut.push_back(endIns);
+
+                    i = blockEnd + 1;
+                    matched = true;
+                }
+            }
+        }
+
+        if (matched) continue;
+        localOut.push_back(src[i]);
+        i++;
+    }
+    return localOut;
+}
+
+static InstrSeq rewriteBlockBrIf(const InstrSeq& in) {
+    std::vector<Instr> src(in.begin(), in.end());
+    std::vector<Instr> out = rewriteSpan(src, 0, (int)src.size());
 
     InstrSeq result;
     result.numParams = in.numParams;
