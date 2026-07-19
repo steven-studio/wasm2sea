@@ -1,6 +1,7 @@
 #include "wasm_instr.hpp"
 #include "wasm_lower.hpp"
 #include "value_ir_dump.hpp"
+#include "value_ir_verify.hpp"
 #include "ir_bridge.hpp"
 #include "wasm_reader.hpp"
 #include "wasm_dump.hpp"
@@ -18,8 +19,12 @@ extern "C" {
 static void usage(const char* prog) {
     std::cerr
         << "Usage:\n"
-        << "  " << prog << " <input.wasm> [--save-ir <out.ir>]\n"
-        << "  " << prog << " (no args: uses built-in example)\n";
+        << "  " << prog << " <input.wasm> [options]\n"
+        << "\n"
+        << "Options:\n"
+        << "  --save-ir <out.ir>          Save dstogov/ir IR to file\n"
+        << "  --print-after-valueir       Print ValueIR after Stage 1 lowering\n"
+        << "  --print-after-seaofnodes    Print progress after Stage 2 (dstogov/ir bridge)\n";
 }
 
 static uint8_t wasm_memory[65536] = {0};
@@ -36,6 +41,7 @@ int main(int argc, char* argv[]) {
     
     std::string wasmPath;
     std::string saveIrPath;
+    std::set<std::string> printAfterStages;
 
     // ---- argv parsing (minimal) ----
     // First non-flag arg is input.wasm
@@ -50,6 +56,20 @@ int main(int argc, char* argv[]) {
                 return 2;
             }
             saveIrPath = argv[++i];
+        } else if (a == "--print-after") {
+            if (i + 1 >= argc) {
+                std::cerr << "Error: --print-after requires a comma-separated stage list\n";
+                return 2;
+            }
+            std::string stages = argv[++i];
+            std::stringstream ss(stages);
+            std::string stage;
+            while (std::getline(ss, stage, ',')) printAfterStages.insert(stage);
+        } else if (a.rfind("--print-after=", 0) == 0) {          // ← 新增：接受 --print-after=xxx 這種寫法
+            std::string stages = a.substr(std::string("--print-after=").length());
+            std::stringstream ss(stages);
+            std::string stage;
+            while (std::getline(ss, stage, ',')) printAfterStages.insert(stage);
         } else if (!a.empty() && a[0] == '-') {
             std::cerr << "Unknown option: " << a << "\n";
             usage(argv[0]);
@@ -99,8 +119,10 @@ int main(int argc, char* argv[]) {
         InstrSeq code = func.instructions;
 
         // Step 1: Wasm → ValueIR (你的 SSA IR)
-        std::cout << "Step 1: Lowering Wasm to ValueIR\n";
-        std::cout << "================================\n";
+        if (printAfterStages.count("valueir")) {
+            std::cout << "\n// -----// IR Dump After ValueIRLowering ("
+                    << func.name << ") //----- //\n";
+        }
 
         // debug dump disabled for benchmark mode
         // dumpInstrSeq(code);
@@ -114,11 +136,20 @@ int main(int argc, char* argv[]) {
         std::vector<std::string> funcNames = g_all_function_names;
 
         ValueIR values = lowerWasmToSsa(code, funcNames);
-        dumpValueIR(values);
+        if (printAfterStages.count("valueir")) dumpValueIR(values);
+
+        auto verifyResult = verifyValueIR(values);
+        if (verifyResult.ok) {
+            std::cout << "[VERIFY] ValueIR passed (" << values.size() << " nodes, 0 errors)\n";
+        } else {
+            std::cout << "[VERIFY] ValueIR FAILED: " << verifyResult.errorCount << " error(s)\n";
+        }
 
         // Step 2: ValueIR → dstogov/ir
-        std::cout << "\nStep 2: Building dstogov/ir Graph\n";
-        std::cout << "==================================\n";
+        if (printAfterStages.count("seaofnodes")) {
+            std::cout << "\n// -----// IR Dump After SeaOfNodesBridge ("
+                    << func.name << ") //----- //\n";
+        }
 
         IRBridge bridge;
         IRFunction* fn = bridge.build(values, func.paramTypes, func.globalInitValues);
@@ -128,28 +159,28 @@ int main(int argc, char* argv[]) {
         // 保存每个函数的 IR
         ir_save(bridge.getCtx(), 0, irFile);
         fflush(irFile);
-        std::cout << "Appended IR to: " << irPath << "\n";
+        if (printAfterStages.count("seaofnodes")) std::cout << "Appended IR to: " << irPath << "\n";
 
         // 輸出 C code: run minimal passes then emit C
         {
             ir_ctx* ctx = bridge.getCtx();
-            printf("  pass: def_use_lists\n"); fflush(stdout);
+            if (printAfterStages.count("seaofnodes")) { printf("  pass: def_use_lists\n"); fflush(stdout); }
             ir_build_def_use_lists(ctx);
-            printf("  pass: cfg\n"); fflush(stdout);
+            if (printAfterStages.count("seaofnodes")) { printf("  pass: cfg\n"); fflush(stdout); }
             ir_build_cfg(ctx);
-            printf("  pass: dominators\n"); fflush(stdout);
+            if (printAfterStages.count("seaofnodes")) { printf("  pass: dominators\n"); fflush(stdout); }
             ir_build_dominators_tree(ctx);
-            printf("  pass: loops\n"); fflush(stdout);
+            if (printAfterStages.count("seaofnodes")) { printf("  pass: loops\n"); fflush(stdout); }
             ir_find_loops(ctx);
-            printf("  pass: gcm\n"); fflush(stdout);
+            if (printAfterStages.count("seaofnodes")) { printf("  pass: gcm\n"); fflush(stdout); }
             ir_gcm(ctx);
-            printf("  pass: schedule\n"); fflush(stdout);
+            if (printAfterStages.count("seaofnodes")) { printf("  pass: schedule\n"); fflush(stdout); }
             ir_schedule(ctx);
-            printf("  pass: vregs\n"); fflush(stdout);
+            if (printAfterStages.count("seaofnodes")) { printf("  pass: vregs\n"); fflush(stdout); }
             ir_assign_virtual_registers(ctx);
-            printf("  pass: live_ranges\n"); fflush(stdout);
+            if (printAfterStages.count("seaofnodes")) { printf("  pass: live_ranges\n"); fflush(stdout); }
             ir_compute_live_ranges(ctx);
-            printf("  pass: coalesce\n"); fflush(stdout);
+            if (printAfterStages.count("seaofnodes")) { printf("  pass: coalesce\n"); fflush(stdout); }
             ir_coalesce(ctx);
             std::string cname = sanitize_cname(func.name);
             char tmpPath[256];
