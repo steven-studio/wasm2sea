@@ -5,6 +5,7 @@
 #include "ir_bridge.hpp"
 #include "wasm_reader.hpp"
 #include "wasm_dump.hpp"
+#include "slp_detect.hpp"
 #include <iostream>
 #include <string>
 #include <fstream>
@@ -162,6 +163,14 @@ int main(int argc, char* argv[]) {
             std::cout << "[VERIFY] ValueIR passed (" << values.size() << " nodes, 0 errors)\n";
         } else {
             std::cout << "[VERIFY] ValueIR FAILED: " << verifyResult.errorCount << " error(s)\n";
+        }
+
+        auto vecBundles = findVectorizableGroups(values);
+        std::cout << "\n[SLP] Found " << vecBundles.size() << " vectorizable bundle(s)\n";
+        for (const auto& b : vecBundles) {
+            std::cout << "  root: v" << b.root[0] << " v" << b.root[1]
+                    << "  lhs: v" << b.lhsGroup[0] << " v" << b.lhsGroup[1]
+                    << "  rhs: v" << b.rhsGroup[0] << " v" << b.rhsGroup[1] << "\n";
         }
 
         // Step 2: ValueIR → dstogov/ir
