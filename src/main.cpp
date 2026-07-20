@@ -168,9 +168,13 @@ int main(int argc, char* argv[]) {
         auto vecBundles = findVectorizableGroups(values);
         std::cout << "\n[SLP] Found " << vecBundles.size() << " vectorizable bundle(s)\n";
         for (const auto& b : vecBundles) {
-            std::cout << "  root: v" << b.root[0] << " v" << b.root[1]
-                    << "  lhs: v" << b.lhsGroup[0] << " v" << b.lhsGroup[1]
-                    << "  rhs: v" << b.rhsGroup[0] << " v" << b.rhsGroup[1] << "\n";
+            std::cout << "  width=" << b.root.size() << "  root:";
+            for (int id : b.root) std::cout << " v" << id;
+            std::cout << "  lhs:";
+            for (int id : b.lhsGroup) std::cout << " v" << id;
+            std::cout << "  rhs:";
+            for (int id : b.rhsGroup) std::cout << " v" << id;
+            std::cout << "\n";
         }
 
         // Step 2: ValueIR → dstogov/ir

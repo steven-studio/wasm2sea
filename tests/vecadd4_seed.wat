@@ -1,0 +1,12 @@
+(module
+  (memory 1)
+  (func (export "test") (param $a i32) (param $b i32) (result i32)
+    (local $s0 i32) (local $s1 i32) (local $s2 i32) (local $s3 i32)
+    (local.set $s0 (i32.add (i32.load offset=0  (local.get $a)) (i32.load offset=0  (local.get $b))))
+    (local.set $s1 (i32.add (i32.load offset=4  (local.get $a)) (i32.load offset=4  (local.get $b))))
+    (local.set $s2 (i32.add (i32.load offset=8  (local.get $a)) (i32.load offset=8  (local.get $b))))
+    (local.set $s3 (i32.add (i32.load offset=12 (local.get $a)) (i32.load offset=12 (local.get $b))))
+    (i32.add (i32.add (local.get $s0) (local.get $s1))
+             (i32.add (local.get $s2) (local.get $s3)))
+  )
+)
