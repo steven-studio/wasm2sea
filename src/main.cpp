@@ -8,6 +8,7 @@
 #include <iostream>
 #include <string>
 #include <fstream>
+#include <sstream>
 #include <regex>
 #include <set>
 
@@ -23,6 +24,7 @@ static void usage(const char* prog) {
         << "\n"
         << "Options:\n"
         << "  --save-ir <out.ir>          Save dstogov/ir IR to file\n"
+        << "  --out-c <out.c>             Path to write generated C code (default: ./out.c)\n"
         << "  --print-after-valueir       Print ValueIR after Stage 1 lowering\n"
         << "  --print-after-seaofnodes    Print progress after Stage 2 (dstogov/ir bridge)\n";
 }
@@ -41,6 +43,7 @@ int main(int argc, char* argv[]) {
     
     std::string wasmPath;
     std::string saveIrPath;
+    std::string outCPath;
     std::set<std::string> printAfterStages;
 
     // ---- argv parsing (minimal) ----
@@ -56,6 +59,12 @@ int main(int argc, char* argv[]) {
                 return 2;
             }
             saveIrPath = argv[++i];
+        } else if (a == "--out-c") {                       // ← 新增
+            if (i + 1 >= argc) {
+                std::cerr << "Error: --out-c requires a path\n";
+                return 2;
+            }
+            outCPath = argv[++i];
         } else if (a == "--print-after") {
             if (i + 1 >= argc) {
                 std::cerr << "Error: --print-after requires a comma-separated stage list\n";
@@ -102,8 +111,16 @@ int main(int argc, char* argv[]) {
     if (dot != std::string::npos) baseName = baseName.substr(0, dot);
     std::string irPath = baseName + ".ir";
     FILE* irFile = fopen(irPath.c_str(), "w");
-    std::string cPath = std::string(getenv("HOME")) + "/wasm2sea/third_party/dstogov-ir/out.c";
+    // 輸出 C 檔案路徑：優先用 --out-c 指定的路徑；否則預設寫到目前
+    // 工作目錄下的 out.c，不再假設 repo 一定 clone 在
+    // ~/wasm2sea/third_party/dstogov-ir 這個固定位置（換機器、換
+    // 使用者、換資料夾名稱都會導致原本的硬編路徑失效）。
+    std::string cPath = outCPath.empty() ? "out.c" : outCPath;
     FILE* cFile = fopen(cPath.c_str(), "w");
+    if (!cFile) {
+        std::cerr << "Error: Cannot open output C file: " << cPath << "\n";
+        return 1;
+    }
     // header will be written after processing all functions
     fclose(cFile);
 
@@ -124,8 +141,10 @@ int main(int argc, char* argv[]) {
                     << func.name << ") //----- //\n";
         }
 
-        // debug dump disabled for benchmark mode
-        // dumpInstrSeq(code);
+        // 逐指令 dump：預設不印（WASM2SEA_ENABLE_DUMP 沒開時是空實作，
+        // 呼叫成本可忽略），開啟 -DWASM2SEA_ENABLE_DUMP 編譯時才會真正
+        // 輸出。不需要再用 benchmark mode 手動註解/解除註解切換。
+        dumpInstrSeq(code);
 
         // 建函數名稱表：Call 指令的 callee_idx 是相對於 wasm 原生的
         // 完整函式索引空間（import 在前，自己定義的函式在後）編碼的，
@@ -187,6 +206,10 @@ int main(int argc, char* argv[]) {
             snprintf(tmpPath, sizeof(tmpPath), "/tmp/wasm2sea_%zu.c", i);
 
             FILE* appendFile = fopen(cPath.c_str(), "a");
+            if (!appendFile) {
+                std::cerr << "Error: Cannot append to output C file: " << cPath << "\n";
+                return 1;
+            }
             ir_emit_c(ctx, cname.c_str(), appendFile);
             fprintf(appendFile, "\n");
             fclose(appendFile);
