@@ -302,15 +302,15 @@ static std::map<int, int> collectParamIndexToValueId(const ValueIR& values) {
 // 掃描整個 ValueIR，找出哪些 local_idx 有被 LocalGet/LocalTee 讀取過。
 // 用來判斷後面要不要幫這個 local 建立 ir_VAR（純 write-only、
 // 從沒被讀過的 local 不需要建，見下方 local_vars 的建立）。
-static std::unordered_set<int> collectReadLocals(const ValueIR& values) {
-    std::unordered_set<int> read_locals;
-    for (const auto& v : values) {
-        if (v.op == Op::LocalGet || v.op == Op::LocalTee) {
-            read_locals.insert(v.local_index);
-        }
-    }
-    return read_locals;
-}
+// static std::unordered_set<int> collectReadLocals(const ValueIR& values) {
+//     std::unordered_set<int> read_locals;
+//     for (const auto& v : values) {
+//         if (v.op == Op::LocalGet || v.op == Op::LocalTee) {
+//             read_locals.insert(v.local_index);
+//         }
+//     }
+//     return read_locals;
+// }
 
 // 掃描整個 ValueIR，判斷這個函式裡有沒有任何記憶體讀寫指令
 // （Load/Store/F64Load/F64Store）。只有需要記憶體操作的函式才需要
@@ -380,19 +380,33 @@ IRFunction* IRBridge::build(const ValueIR& values,
     std::set<int> local_indices = collectLocalIndices(values);
     std::unordered_map<int, ir_type> local_types = buildLocalTypes(values, paramTypes, local_indices);
 
-    std::unordered_set<int> read_locals = collectReadLocals(values);
+    // std::unordered_set<int> read_locals = collectReadLocals(values);
 
-    // 建 local_vars
+    // collectReadLocals() 依賴 Op::LocalGet/Op::LocalTee 節點判斷某個
+    // local 是否曾被讀取，但 wasm_lower.cpp 的 SSA 前向替換設計下這兩種
+    // 節點從不會被實際產生（local 讀取一律直接查 ctx.localVars 快取），
+    // 導致 read_locals 恆為空集合。任何非函式參數的 local 因此被誤判成
+    // 「純 write-only」而跳過 ir_VAR 建立，造成對它的 LocalSet 在
+    // LocalSetNode::lower() 被靜默丟棄。已用 debug print 實測驗證：
+    // idx=1, is_param=0, is_read=0 → 三次 LocalSet 全部被跳過並報錯。
+    //
+    // 在純直線流程下這不影響最終結果（讀取路徑本來就繞過 ir_VAR），
+    // 但在巢狀迴圈中，內層 loop-carried Phi 若需要透過 use_vload_entry
+    // 從外層 local 的 ir_VAR 讀取初始值，會讀到從未被正確初始化的
+    // 變數，是真正的正確性風險。修正：移除 is_param/is_read 過濾，
+    // 對每個 local index 一律建立 ir_VAR。代價是純 write-only、從未
+    // 被讀取的 local 會多一個沒用到的宣告，不影響正確性。
+
     std::unordered_map<int, ir_ref> local_vars;
     for (int idx : local_indices) {
-        // param 一定要建（有被 VSTORE 初始化）
-        bool is_param = param_index_to_value_id.count(idx) > 0;
-        bool is_read  = read_locals.count(idx) > 0;
-        if (!is_param && !is_read) continue;  // 純 write-only local，跳過
-
+        // bool is_param = param_index_to_value_id.count(idx) > 0;
+        // bool is_read  = read_locals.count(idx) > 0;
+        // fprintf(stderr, "[DEBUG] idx=%d is_param=%d is_read=%d local_indices.size=%zu\n",
+        //         idx, is_param, is_read, local_indices.size());  // ← 暫時加這行
+        // if (!is_param && !is_read) continue;
+        
         char name[32];
         if (idx >= 2000) {
-            // wasm global variable
             snprintf(name, sizeof(name), "wasm_global_%d", idx - 2000);
         } else {
             snprintf(name, sizeof(name), "local_%d", idx);

@@ -21,14 +21,14 @@ void dumpValueIR(const ValueIR& values) {
 
         // ---- 局部變量 / global 存取：原本完全沒印 index，補上 ----
         case Op::LocalGet:
-            std::cout << "(local_index=" << v.local_index << ")";
+            std::cout << "(local_index=" << v.paramIndex << ")";
             break;
         case Op::LocalSet:
-            std::cout << "(local_index=" << v.local_index
+            std::cout << "(local_index=" << v.paramIndex
                        << ", val=v" << v.lhs << ")";
             break;
         case Op::LocalTee:
-            std::cout << "(local_index=" << v.local_index
+            std::cout << "(local_index=" << v.paramIndex
                        << ", val=v" << v.lhs << ")";
             break;
         case Op::GlobalGet:
@@ -208,6 +208,8 @@ void dumpValueIR(const ValueIR& values) {
             }
             std::cout << ")";
             break;
+        case Op::_Count:
+            break;  // 哨兵值，不會有實際節點使用這個 op
         }
 
         std::cout << "\n";
