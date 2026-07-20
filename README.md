@@ -58,6 +58,12 @@ cmake ..
 make
 ```
 
+To also enable instruction-level debug dumps (see [Debug Output](#debug-output)):
+```bash
+cmake .. -DCMAKE_CXX_FLAGS="-DWASM2SEA_ENABLE_DUMP"
+make
+```
+
 ## Usage
 
 ### Basic Workflow
@@ -149,7 +155,24 @@ See [tests/](tests/) directory for examples:
 ```
 
 ### Debug Output
-Uncomment debug prints in wasm_reader.cpp to see instruction sequence.
+Instruction-level dumps (`dumpInstr` / `dumpInstrSeq` in `wasm_dump.cpp`)
+are compiled out by default. Enable them at build time:
+
+```bash
+cd build
+cmake .. -DCMAKE_CXX_FLAGS="-DWASM2SEA_ENABLE_DUMP"
+make
+```
+
+With the flag off, these calls are no-ops (safe to leave uncommented in
+`main.cpp`); with it on, running `wasm2sea` prints the raw `InstrSeq` for
+each function before lowering.
+
+For SSA-level output after each pipeline stage, use `--print-after`
+instead (no rebuild required — see Usage below):
+```bash
+./wasm2sea input.wasm --print-after valueir,seaofnodes
+```
 
 ### Adding New Operations
 
