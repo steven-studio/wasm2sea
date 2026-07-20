@@ -24,8 +24,9 @@ inline bool isIsomorphic(const ValueIR& ir, int i, int j, int elemSize) {
     if (vi.op != vj.op || vi.type != vj.type) return false;
 
     if (vi.op == Op::Load) {
-        if (vi.lhs != vj.lhs) return false;               // 必須是同一個base pointer
-        return (vj.mem_offset - vi.mem_offset) == elemSize; // 且offset恰好差一個element
+        if (vi.lhs != vj.lhs) return false;   // 必須是同一個base pointer
+        int32_t diff = vj.mem_offset - vi.mem_offset;
+        return diff == elemSize || diff == -elemSize;  // offset 差一個 element，雙向都接受
     }
 
     // 之後該修：只對「lhs/rhs真的代表SSA operand」的opcode才遞迴，
