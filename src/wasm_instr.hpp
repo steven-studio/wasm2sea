@@ -103,7 +103,8 @@ enum class WasmOp {
 
     Call,       // operand = callee func index, foperand = num_args
     Unreachable,
-    Unsupported
+    Unsupported,
+    _Count
 };
 
 struct Instr {

@@ -1,128 +1,167 @@
 #include "wasm_dump.hpp"
 #include <cstdio>
+#include <cstddef>
+
+// ============================================================
+// opToString: WasmOp -> 字串
+//
+// 用查表取代原本的巨大 switch-case。原本的 switch 遺漏了
+// I32Rotl / I32Rotr 兩個 case（會靜默 fallback 到 default 印出
+// "Unknown"，不會有任何編譯錯誤或警告提醒），改成查表後用
+// static_assert 鎖住表格大小跟 enum WasmOp 的項目數一致：只要
+// enum 之後新增/刪除項目卻忘記同步這張表，編譯就會直接失敗，
+// 不會再默默印錯名字。
+// ============================================================
+
+static const char* const kWasmOpNames[] = {
+    "FuncInfo",       // FuncInfo
+    "LocalGet",       // LocalGet
+    "LocalSet",       // LocalSet
+    "LocalTee",       // LocalTee
+    "I32Const",       // I32Const
+    "I32Add",         // I32Add
+    "I32Sub",         // I32Sub
+    "I32Mul",         // I32Mul
+    "I32DivS",        // I32DivS
+    "I32DivU",        // I32DivU
+    "I32RemS",        // I32RemS
+    "I32RemU",        // I32RemU
+    "I32Eq",          // I32Eq
+    "I32Ne",          // I32Ne
+    "I32LtS",         // I32LtS
+    "I32LtU",         // I32LtU
+    "I32GtS",         // I32GtS
+    "I32GtU",         // I32GtU
+    "I32LeS",         // I32LeS
+    "I32LeU",         // I32LeU
+    "I32GeS",         // I32GeS
+    "I32GeU",         // I32GeU
+    "I32Eqz",         // I32Eqz
+    "I32And",         // I32And
+    "I32Or",          // I32Or
+    "I32Xor",         // I32Xor
+    "I32Shl",         // I32Shl
+    "I32ShrS",        // I32ShrS
+    "I32ShrU",        // I32ShrU
+    "I32Rotl",        // I32Rotl   ← 原本 switch 漏掉的 case，補上
+    "I32Rotr",        // I32Rotr   ← 同上
+    "I32Clz",         // I32Clz
+    "I32Ctz",         // I32Ctz
+    "I32Popcnt",      // I32Popcnt
+    "Select",         // Select
+    "If",             // If
+    "Else",           // Else
+    "End",            // End
+    "Block",          // Block
+    "Loop",           // Loop
+    "Br",             // Br
+    "Br_if",          // Br_if
+    "BrTable",        // BrTable
+    "Drop",           // Drop
+    "GlobalGet",      // GlobalGet
+    "GlobalSet",      // GlobalSet
+    "Return",         // Return
+    "MemorySize",     // MemorySize
+    "MemoryCopy",     // MemoryCopy
+    "MemoryFill",     // MemoryFill
+    "F64Const",       // F64Const
+    "F64Add",         // F64Add
+    "F64Sub",         // F64Sub
+    "F64Mul",         // F64Mul
+    "F64Div",         // F64Div
+    "F64Abs",         // F64Abs
+    "F64Neg",         // F64Neg
+    "F64Sqrt",        // F64Sqrt
+    "F64Exp",         // F64Exp
+    "F64Log",         // F64Log
+    "F64Sin",         // F64Sin
+    "F64Cos",         // F64Cos
+    "F64Pow",         // F64Pow
+    "F64Min",         // F64Min
+    "F64Max",         // F64Max
+    "F64Eq",          // F64Eq
+    "F64Ne",          // F64Ne
+    "F64Lt",          // F64Lt
+    "F64Gt",          // F64Gt
+    "F64Le",          // F64Le
+    "F64Ge",          // F64Ge
+    "F64ConvertI32S", // F64ConvertI32S
+    "F64ConvertI32U", // F64ConvertI32U
+    "I32TruncF64S",   // I32TruncF64S
+    "I32TruncF64U",   // I32TruncF64U
+    "F64Load",        // F64Load
+    "F64Store",       // F64Store
+    "I32Load",        // I32Load
+    "I32Store",       // I32Store
+    "I64Const",       // I64Const
+    "I64Add",         // I64Add
+    "I64Sub",         // I64Sub
+    "I64Mul",         // I64Mul
+    "I64DivS",        // I64DivS
+    "I64DivU",        // I64DivU
+    "I64RemS",        // I64RemS
+    "I64RemU",        // I64RemU
+    "I64And",         // I64And
+    "I64Or",          // I64Or
+    "I64Xor",         // I64Xor
+    "I64Shl",         // I64Shl
+    "I64ShrS",        // I64ShrS
+    "I64ShrU",        // I64ShrU
+    "I64Clz",         // I64Clz
+    "I64Ctz",         // I64Ctz
+    "I64Popcnt",      // I64Popcnt
+    "I64Eqz",         // I64Eqz
+    "I64Eq",          // I64Eq
+    "I64Ne",          // I64Ne
+    "I64LtS",         // I64LtS
+    "I64LtU",         // I64LtU
+    "I64GtS",         // I64GtS
+    "I64GtU",         // I64GtU
+    "I64LeS",         // I64LeS
+    "I64LeU",         // I64LeU
+    "I64GeS",         // I64GeS
+    "I64GeU",         // I64GeU
+    "I32WrapI64",     // I32WrapI64
+    "I64ExtendI32S",  // I64ExtendI32S
+    "I64ExtendI32U",  // I64ExtendI32U
+    "F64ConvertI64S", // F64ConvertI64S
+    "F64ConvertI64U", // F64ConvertI64U
+    "I64TruncF64S",   // I64TruncF64S
+    "I64TruncF64U",   // I64TruncF64U
+    "I64Load",        // I64Load
+    "I64Store",       // I64Store
+    "Call",           // Call
+    "Unreachable",    // Unreachable
+    "Unsupported",    // Unsupported
+};
+
+// 編譯期防呆：如果之後在 enum 裡加/刪項目卻忘記同步這張表，
+// 這裡會直接編譯失敗，而不是默默印出錯的名字。
+static_assert(sizeof(kWasmOpNames) / sizeof(kWasmOpNames[0])
+              == static_cast<size_t>(WasmOp::_Count),
+              "kWasmOpNames must be kept in sync with enum WasmOp");
 
 static const char* opToString(WasmOp op) {
-    switch (op) {
-    case WasmOp::FuncInfo:       return "FuncInfo";
-    case WasmOp::LocalGet:       return "LocalGet";
-    case WasmOp::LocalSet:       return "LocalSet";
-    case WasmOp::LocalTee:       return "LocalTee";
-    case WasmOp::I32Const:       return "I32Const";
-    case WasmOp::I32Add:         return "I32Add";
-    case WasmOp::I32Sub:         return "I32Sub";
-    case WasmOp::I32Mul:         return "I32Mul";
-    case WasmOp::I32DivS:        return "I32DivS";
-    case WasmOp::I32DivU:        return "I32DivU";
-    case WasmOp::I32RemS:        return "I32RemS";
-    case WasmOp::I32RemU:        return "I32RemU";
-    case WasmOp::I32Eq:          return "I32Eq";
-    case WasmOp::I32Ne:          return "I32Ne";
-    case WasmOp::I32LtS:         return "I32LtS";
-    case WasmOp::I32LtU:         return "I32LtU";
-    case WasmOp::I32GtS:         return "I32GtS";
-    case WasmOp::I32GtU:         return "I32GtU";
-    case WasmOp::I32LeS:         return "I32LeS";
-    case WasmOp::I32LeU:         return "I32LeU";
-    case WasmOp::I32GeS:         return "I32GeS";
-    case WasmOp::I32GeU:         return "I32GeU";
-    case WasmOp::I32Eqz:         return "I32Eqz";
-    case WasmOp::I32And:         return "I32And";
-    case WasmOp::I32Or:          return "I32Or";
-    case WasmOp::I32Xor:         return "I32Xor";
-    case WasmOp::I32Shl:         return "I32Shl";
-    case WasmOp::I32ShrS:        return "I32ShrS";
-    case WasmOp::I32ShrU:        return "I32ShrU";
-    case WasmOp::I32Clz:         return "I32Clz";
-    case WasmOp::I32Ctz:         return "I32Ctz";
-    case WasmOp::I32Popcnt:      return "I32Popcnt";
-    case WasmOp::Select:         return "Select";
-    case WasmOp::Block:          return "Block";
-    case WasmOp::If:             return "If";
-    case WasmOp::Else:           return "Else";
-    case WasmOp::End:            return "End";
-    case WasmOp::Loop:           return "Loop";
-    case WasmOp::Br:             return "Br";
-    case WasmOp::Br_if:          return "Br_if";
-    case WasmOp::BrTable:        return "BrTable";
-    case WasmOp::Return:         return "Return";
-    case WasmOp::Drop:           return "Drop";
-    case WasmOp::Call:           return "Call";
-    case WasmOp::Unreachable:    return "Unreachable";
-    case WasmOp::GlobalGet:      return "GlobalGet";
-    case WasmOp::GlobalSet:      return "GlobalSet";
-    case WasmOp::I32Load:        return "I32Load";
-    case WasmOp::I32Store:       return "I32Store";
-    case WasmOp::I64Load:        return "I64Load";
-    case WasmOp::I64Store:       return "I64Store";
-    case WasmOp::F64Load:        return "F64Load";
-    case WasmOp::F64Store:       return "F64Store";
-    case WasmOp::I64Const:       return "I64Const";
-    case WasmOp::I64Add:         return "I64Add";
-    case WasmOp::I64Sub:         return "I64Sub";
-    case WasmOp::I64Mul:         return "I64Mul";
-    case WasmOp::I64DivS:        return "I64DivS";
-    case WasmOp::I64DivU:        return "I64DivU";
-    case WasmOp::I64RemS:        return "I64RemS";
-    case WasmOp::I64RemU:        return "I64RemU";
-    case WasmOp::I64And:         return "I64And";
-    case WasmOp::I64Or:          return "I64Or";
-    case WasmOp::I64Xor:         return "I64Xor";
-    case WasmOp::I64Shl:         return "I64Shl";
-    case WasmOp::I64ShrS:        return "I64ShrS";
-    case WasmOp::I64ShrU:        return "I64ShrU";
-    case WasmOp::I64Clz:         return "I64Clz";
-    case WasmOp::I64Ctz:         return "I64Ctz";
-    case WasmOp::I64Popcnt:      return "I64Popcnt";
-    case WasmOp::I64Eqz:         return "I64Eqz";
-    case WasmOp::I64Eq:          return "I64Eq";
-    case WasmOp::I64Ne:          return "I64Ne";
-    case WasmOp::I64LtS:         return "I64LtS";
-    case WasmOp::I64LtU:         return "I64LtU";
-    case WasmOp::I64GtS:         return "I64GtS";
-    case WasmOp::I64GtU:         return "I64GtU";
-    case WasmOp::I64LeS:         return "I64LeS";
-    case WasmOp::I64LeU:         return "I64LeU";
-    case WasmOp::I64GeS:         return "I64GeS";
-    case WasmOp::I64GeU:         return "I64GeU";
-    case WasmOp::I32WrapI64:     return "I32WrapI64";
-    case WasmOp::I64ExtendI32S:  return "I64ExtendI32S";
-    case WasmOp::I64ExtendI32U:  return "I64ExtendI32U";
-    case WasmOp::F64Const:       return "F64Const";
-    case WasmOp::F64Add:         return "F64Add";
-    case WasmOp::F64Sub:         return "F64Sub";
-    case WasmOp::F64Mul:         return "F64Mul";
-    case WasmOp::F64Div:         return "F64Div";
-    case WasmOp::F64Abs:         return "F64Abs";
-    case WasmOp::F64Neg:         return "F64Neg";
-    case WasmOp::F64Sqrt:        return "F64Sqrt";
-    case WasmOp::F64Exp:         return "F64Exp";
-    case WasmOp::F64Log:         return "F64Log";
-    case WasmOp::F64Sin:         return "F64Sin";
-    case WasmOp::F64Cos:         return "F64Cos";
-    case WasmOp::F64Pow:         return "F64Pow";
-    case WasmOp::F64Min:         return "F64Min";
-    case WasmOp::F64Max:         return "F64Max";
-    case WasmOp::F64Eq:          return "F64Eq";
-    case WasmOp::F64Ne:          return "F64Ne";
-    case WasmOp::F64Lt:          return "F64Lt";
-    case WasmOp::F64Gt:          return "F64Gt";
-    case WasmOp::F64Le:          return "F64Le";
-    case WasmOp::F64Ge:          return "F64Ge";
-    case WasmOp::F64ConvertI32S: return "F64ConvertI32S";
-    case WasmOp::F64ConvertI32U: return "F64ConvertI32U";
-    case WasmOp::F64ConvertI64S: return "F64ConvertI64S";
-    case WasmOp::F64ConvertI64U: return "F64ConvertI64U";
-    case WasmOp::I32TruncF64S:   return "I32TruncF64S";
-    case WasmOp::I32TruncF64U:   return "I32TruncF64U";
-    case WasmOp::I64TruncF64S:   return "I64TruncF64S";
-    case WasmOp::I64TruncF64U:   return "I64TruncF64U";
-    case WasmOp::MemorySize:     return "MemorySize";
-    case WasmOp::MemoryCopy:     return "MemoryCopy";
-    case WasmOp::MemoryFill:     return "MemoryFill";
-    case WasmOp::Unsupported:    return "Unsupported";
-    default:                     return "Unknown";
-    }
+    size_t idx = static_cast<size_t>(op);
+    if (idx >= static_cast<size_t>(WasmOp::_Count)) return "Unknown";
+    return kWasmOpNames[idx];
 }
+
+// ============================================================
+// dumpInstr / dumpInstrSeq: 逐指令印出 InstrSeq 內容
+//
+// 只在編譯時定義了 WASM2SEA_ENABLE_DUMP 這個 flag 才會真正輸出
+// 內容；flag 沒開時提供空實作，讓這兩個符號永遠存在、永遠可以
+// 被呼叫（例如 main.cpp 裡被註解掉的 dumpInstrSeq(code) 隨時可以
+// 解開來用），不會因為拿掉 flag 就變成 undefined reference。
+//
+// 開啟方式（CMake 範例）：
+//   cmake .. -DCMAKE_CXX_FLAGS="-DWASM2SEA_ENABLE_DUMP"
+// 或在 CMakeLists.txt 裡用 option() + target_compile_definitions
+// 掛成正式的建置選項。
+// ============================================================
+
+#ifdef WASM2SEA_ENABLE_DUMP
 
 void dumpInstr(const Instr& instr, int indent) {
     for (int i = 0; i < indent; i++) printf("  ");
@@ -186,3 +225,10 @@ void dumpInstrSeq(const InstrSeq& seq) {
     }
     printf("=== End of InstrSeq ===\n");
 }
+
+#else
+
+void dumpInstr(const Instr&, int) {}
+void dumpInstrSeq(const InstrSeq&) {}
+
+#endif  // WASM2SEA_ENABLE_DUMP
