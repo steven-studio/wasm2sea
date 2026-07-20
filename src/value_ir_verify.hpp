@@ -154,6 +154,20 @@ inline VerifyResult verifyValueIR(const ValueIR& ir) {
                 break;
 
             default:
+                // 目前沒有 SSA ref 需要驗證的 op（Param/I32Const/.../Unreachable）
+                // 落到這裡是正常的。如果之後新增 op 卻忘記在上面的 switch 分類，
+                // 也會落到這裡卻不會有任何提示——這裡刻意保留輕量檢查，只在
+                // debug 情境下用來提醒維護者「這個 op 需要決定要不要驗證」。
+            #ifdef WASM2SEA_ENABLE_DUMP
+                // 已知不需要驗證的 op，此處僅列出防止誤報
+                if (v.op != Op::Param && v.op != Op::I32Const && v.op != Op::I64Const &&
+                    v.op != Op::F64Const && v.op != Op::LocalGet && v.op != Op::LocalTee &&
+                    v.op != Op::GlobalGet && v.op != Op::Else && v.op != Op::End &&
+                    v.op != Op::Loop && v.op != Op::Unreachable) {
+                    fprintf(stderr, "[VERIFY WARNING] v%d: Op %s not explicitly classified in verifyValueIR\n",
+                            idx, opToString(v.op));
+                }
+            #endif
                 break;
         }
     }
