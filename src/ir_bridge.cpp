@@ -476,7 +476,7 @@ void IRBridge::dump(IRFunction* fn) {
         // printf("\nIR Dump:\n");
     ir_dump(fn->ctx, stdout);
         // printf("\n\nDOT Format:\n");
-    ir_dump_dot(fn->ctx, "wasm_function", stdout);
+    wasm2sea_ir_dump_dot(fn->ctx, "wasm_function", stdout);
 }
 
 bool IRBridge::save(const char* path) {

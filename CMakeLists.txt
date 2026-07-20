@@ -23,7 +23,6 @@ set(SOURCES
     src/value_ir_dump.cpp
     src/value_ir_eval.cpp
     src/ir_bridge.cpp
-    src/wasm_reader.cpp
 )
 
 add_executable(wasm2sea ${SOURCES})
@@ -47,6 +46,17 @@ target_link_libraries(wasm2sea PRIVATE
 # ===== 編譯選項 =====
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(wasm2sea PRIVATE -Wall -Wextra)
+endif()
+
+# ===== SIMD / 向量化支援開關 =====
+# 平常關閉（OFF）：third_party/dstogov-ir 保持在 master 分支即可編譯。
+# 開啟（ON）：需要先把 third_party/dstogov-ir 切到 simd 分支，
+#   否則 dstogov/ir 端會缺少對應符號，連結失敗。
+# 用法：cmake .. -DWASM2SEA_ENABLE_SIMD=ON
+option(WASM2SEA_ENABLE_SIMD "Enable SIMD/vectorization support (requires dstogov/ir simd branch)" OFF)
+
+if(WASM2SEA_ENABLE_SIMD)
+    target_compile_definitions(wasm2sea PRIVATE WASM2SEA_ENABLE_SIMD)
 endif()
 
 # ===== 自動編譯 ir（可選）=====

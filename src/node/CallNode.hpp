@@ -3,6 +3,7 @@
 #include "Trace.hpp"
 #include <string>
 #include <unordered_set>
+#include "ir_compat.hpp"
 
 namespace ir_node {
 
@@ -12,7 +13,7 @@ struct CallNode : Node {
         size_t i = bc.current_index;
         std::string cname = val.callee_name;
         if (!cname.empty() && cname[0] >= '0' && cname[0] <= '9') cname = "func_" + cname;
-        ir_ref name_ref = ir_str(ctx, cname.c_str());
+        ir_ref name_ref = wasm2sea_ir_str(ctx, cname.c_str());
         ir_ref func_ref = ir_const_func(ctx, name_ref, IR_UNUSED);
         std::vector<ir_ref> arg_refs;
         for (int arg_id : val.operands)
