@@ -5,23 +5,27 @@
 // 開關由 CMake 的 WASM2SEA_ENABLE_SIMD 選項控制（見 CMakeLists.txt）。
 //
 // 現況（2026-07-21）：
-//   - master 分支：ir_str(ctx, const char*) 是函式，回傳 ir_ref
-//   - simd 分支：ir_str 變成一個型別（typedef int ir_str），原本
-//     函式的角色改由另一個尚未確認名稱的函式取代 —— SIMD 分支目前
-//     還在快速變動中，下面的 SIMD 分支實作先留佔位符，故意編譯失敗，
-//     避免在還沒查清楚正確 API 前被誤用、產生看似能編但語意錯誤的
-//     程式碼。
+//   - master 分支：ir_str(ctx, const char*) 是函式，回傳 ir_ref，
+//     做字串 intern。
+//   - simd 分支：ir_str 這個名字只留下型別身分（整數索引 typedef），
+//     移除了同名的相容函式；真正做字串 intern 的函式改名為
+//     ir_string(ctx, const char*)，回傳型別是 ir_str（跟 ir_ref
+//     底層都是同一種整數 typedef，可安全轉型）。
+//
+// 已驗證（vecadd4_seed / call_simple / factorial_rec 三支測資）：
+//   - 非字串路徑（SLP 向量化偵測、一般 Add/Load lowering）不受影響
+//   - 一般 Call 節點：wasm2sea_ir_str 正確 intern 被呼叫函式名稱，
+//     ir_const_func 正確消費，整條 dstogov/ir pass pipeline
+//     （def_use_lists ~ coalesce）順利跑完
+//   - 自我遞迴 Call：callee 名稱正確顯示為函式自身名稱，不會
+//     fallback 成錯誤的 index 或空字串
 #pragma once
 #include "ir_internal.hpp"
 
 #ifdef WASM2SEA_ENABLE_SIMD
 
 inline ir_ref wasm2sea_ir_str(ir_ctx* ctx, const char* s) {
-    static_assert(sizeof(ir_ctx) == 0,
-        "wasm2sea_ir_str: simd 分支上正確的字串 intern API 尚未確認，"
-        "先去 third_party/dstogov-ir（simd 分支）的 ir.h 查清楚 ir_str "
-        "改名後的函式簽名，再補上這裡的實作。");
-    return 0;
+    return (ir_ref)ir_string(ctx, s);
 }
 
 inline void wasm2sea_ir_dump_dot(ir_ctx* ctx, const char* name, FILE* f) {
